@@ -3,24 +3,54 @@ using System.Collections.Generic;
 namespace Sahkku.Rules
 {
     /// <summary>
-    /// The rule code, shared by the game engine and (later) by LLM-driven NPCs. Behaviour is defined
-    /// by a <see cref="RuleSet"/> loaded from JSON; this type contains only the rule primitives those
-    /// definitions select. It has no Unity dependency and no hidden state, so it can run on the
-    /// server side for NPC/LLM tooling.
+    /// The rule code, shared by the game engine and by LLM-driven NPCs. Behaviour is defined by a
+    /// <see cref="RuleSet"/> loaded from JSON; this type contains only the rule primitives those
+    /// definitions select. It has no Unity dependency and no hidden state, so it runs unchanged on a
+    /// server that drives an NPC.
+    ///
+    /// Movement happens along the <see cref="TrackRules">track</see>: every piece stores the arc it
+    /// sits on (<see cref="Piece.arc"/>) and its board cell follows from that. That is what makes the
+    /// "8"-shaped pattern — including the middle row being walked a second time before the soldier
+    /// drops back into its home row — expressible at all.
     /// </summary>
     public class RulesEngine
     {
         readonly RuleSet rules;
+        readonly BoardTrack trackP1;
+        readonly BoardTrack trackP2;
 
         public RulesEngine(RuleSet rules)
         {
             if (rules == null) throw new RuleSetException("RulesEngine requires a RuleSet.");
             this.rules = rules;
+            trackP1 = BoardTrack.Build(rules.board, rules.track);
+            trackP2 = trackP1.Mirror();
         }
 
         public RuleSet Rules { get { return rules; } }
 
-        /// <summary>Creates a fresh game using the standard default setup for the given options.</summary>
+        /// <summary>Number of arcs in one lap of a track.</summary>
+        public int TrackLength { get { return trackP1.Length; } }
+
+        /// <summary>The board cell an arc points at, on a player's track.</summary>
+        public int PlaceOfArc(PieceOwner owner, int arc)
+        {
+            return TrackFor(owner).PlaceOf(arc);
+        }
+
+        /// <summary>The track arc a board cell maps to on a player's track (-1 when off the track).</summary>
+        public int ArcOfPlace(PieceOwner owner, int placeIndex)
+        {
+            return TrackFor(owner).FirstArcOf(placeIndex);
+        }
+
+        /// <summary>The row a player's soldiers start on.</summary>
+        public int HomeRowOf(PieceOwner owner)
+        {
+            return TrackFor(owner).HomeRow;
+        }
+
+        /// <summary>Creates a fresh game using the setup declared in the ruleset.</summary>
         public GameState InitGame(EngineOptions options)
         {
             var state = new GameState();
@@ -34,8 +64,18 @@ namespace Sahkku.Rules
             AddPiece(state, rules.setup.king, PieceType.King, ResolveOwner(rules.setup.king.owner), ref nextId);
 
             VariantRules variant = options.evenOdds ? rules.variants.evenOdds : rules.variants.standard;
-            ApplyCoordinates(state, variant.active, MarkActive);
-            ApplyCoordinates(state, variant.activatable, MarkActivatable);
+            ApplyVariant(state, PieceOwner.P1, variant);
+            ApplyVariant(state, PieceOwner.P2, variant);
+
+            // The board cell is derived from the arc, so normalise every piece onto its owner's track
+            // (the mirror means a player-two piece's arc is not its place index).
+            foreach (Place place in state.places)
+            {
+                foreach (Piece piece in place.pieces)
+                {
+                    piece.arc = ArcForPiece(piece);
+                }
+            }
 
             foreach (Place place in state.places)
             {
@@ -51,12 +91,55 @@ namespace Sahkku.Rules
             return state;
         }
 
+        /// <summary>
+        /// Throws for the starting player as the ruleset prescribes (see <see cref="StartRules"/>).
+        /// A host that lets the players pick instead passes the choice through
+        /// <see cref="EngineOptions.startingPlayer"/> and never calls this.
+        /// </summary>
+        public PieceOwner ThrowForStartingPlayer(IRandomSource random)
+        {
+            if (random == null) throw new RuleSetException("ThrowForStartingPlayer requires a random source.");
+            string activateId = rules.dice.activateFace;
+
+            if (rules.start.mode == StartModes.MostSahhku)
+            {
+                int p1;
+                int p2;
+                do
+                {
+                    p1 = CountSahhku(random, activateId);
+                    p2 = CountSahhku(random, activateId);
+                }
+                while (p1 == p2);
+                return p1 > p2 ? PieceOwner.P1 : PieceOwner.P2;
+            }
+
+            PieceOwner owner = PieceOwner.P1;
+            for (int attempt = 0; attempt < 10000; ++attempt)
+            {
+                for (int die = 0; die < rules.dice.count; ++die)
+                {
+                    if (rules.dice.faces[random.NextDieFaceIndex()].id == activateId) return owner;
+                }
+                owner = owner == PieceOwner.P1 ? PieceOwner.P2 : PieceOwner.P1;
+            }
+            throw new RuleSetException("ThrowForStartingPlayer never produced a sáhkku; the random source looks broken.");
+        }
+
+        int CountSahhku(IRandomSource random, string faceId)
+        {
+            int count = 0;
+            for (int die = 0; die < rules.dice.count; ++die)
+            {
+                if (rules.dice.faces[random.NextDieFaceIndex()].id == faceId) count++;
+            }
+            return count;
+        }
+
         /// <summary>Maps board coordinates onto the S-shaped path index; returns -1 when off the board.</summary>
         public int IndexFromCoordinates(int x, int y)
         {
-            if (x < 0 || x >= rules.board.width || y < 0 || y >= rules.board.height) return -1;
-            int i = (y % 2 == 1) ? (rules.board.width - 1 - x) : x;
-            return y * rules.board.width + i;
+            return BoardLayout.IndexFromCoordinates(rules.board.width, rules.board.height, x, y);
         }
 
         public void RollAllDice(GameState state, IRandomSource random)
@@ -67,39 +150,59 @@ namespace Sahkku.Rules
             }
         }
 
-        /// <summary>Orders the dice ascending by face value, exactly as the original <c>dice.Sort()</c>.</summary>
-        public void OrderDice(GameState state)
+        /// <summary>
+        /// Rolls the dice, puts them into the ruleset's spending order and opens the move phase.
+        /// Hands the turn straight over when the first die cannot be used, because the ruleset forbids
+        /// skipping a die value.
+        /// </summary>
+        public void RollAndBeginTurn(GameState state, IRandomSource random)
         {
-            state.dice.Sort();
+            if (state.gameOver) throw new IllegalMoveException("The game is over.");
+            if (!state.IsRollPhase) throw new IllegalMoveException("It is not a roll phase.");
+            RollAllDice(state, random);
+            OrderDice(state);
+            state.currentActiveDie = 0;
+            state.turnPhase = (TurnPhase)((int)state.turnPhase + 1);
+            if (!EvaluateAllowedPlaces(state)) NextPlayerTurn(state);
         }
 
+        /// <summary>Orders the dice into the spending order declared by the ruleset.</summary>
+        public void OrderDice(GameState state)
+        {
+            state.dice.Sort(delegate(DieFace a, DieFace b)
+            {
+                return rules.UseOrderOf(a).CompareTo(rules.UseOrderOf(b));
+            });
+        }
+
+        /// <summary>
+        /// Throws the die currently up for spending again. Only legal while the ruleset allows
+        /// re-rolling (here: while a sáhkku face is up and no die has been spent yet).
+        /// </summary>
         public void RerollFirstDie(GameState state, IRandomSource random)
         {
-            state.dice[0] = FaceFromIndex(random.NextDieFaceIndex());
+            if (!CanReroll(state)) throw new IllegalMoveException("Re-rolling is not allowed right now.");
+            state.dice[state.currentActiveDie] = FaceFromIndex(random.NextDieFaceIndex());
         }
 
         public bool CanReroll(GameState state)
         {
-            if (rules.dice.rerollRequiresFirstDie && state.currentActiveDie != 0) return false;
-            if (CurrentFace(state) != rules.ResolveFace(rules.dice.rerollFace)) return false;
-
-            PieceOwner current = state.CurrentPlayer;
-            foreach (Place place in state.places)
-            {
-                foreach (Piece piece in place.pieces)
-                {
-                    if (piece.owner == current && piece.isActive) return true;
-                }
-            }
-            return false;
+            if (state.gameOver || state.IsRollPhase) return false;
+            if (rules.dice.reroll.beforeUsingAnyDie && state.currentActiveDie != 0) return false;
+            return CanRerollFace(CurrentFace(state));
         }
 
         /// <summary>Recomputes <see cref="Piece.allowedPlaces"/> for the current player; returns whether any piece can move.</summary>
         public bool EvaluateAllowedPlaces(GameState state)
         {
+            if (state.gameOver || state.IsRollPhase)
+            {
+                ClearAllowedPlaces(state);
+                return false;
+            }
+
             bool anyAllowedPlaces = false;
             PieceOwner current = state.CurrentPlayer;
-
             foreach (Place place in state.places)
             {
                 foreach (Piece piece in place.pieces)
@@ -129,27 +232,46 @@ namespace Sahkku.Rules
             }
         }
 
+        /// <summary>Board cells the piece may move to with the die currently being spent.</summary>
         public List<int> GetAllowedPlaces(GameState state, Piece piece)
         {
             var allowed = new List<int>();
-            PieceRules def = rules.Def(piece.type);
-            int steps = def.movesScaleWithDie ? StepsFor(CurrentFace(state)) : 1;
+            BoardTrack track = TrackFor(piece.owner);
+            foreach (int arc in GetAllowedArcs(state, piece))
+            {
+                int place = track.PlaceOf(arc);
+                if (!allowed.Contains(place)) allowed.Add(place);
+            }
+            return allowed;
+        }
 
+        /// <summary>
+        /// The track arcs a piece may move to with the die currently being spent. This is the
+        /// authoritative form of "what is legal"; <see cref="GetAllowedPlaces"/> projects it onto
+        /// board cells for the UI. Two arcs share a middle-row cell, so the arc is what makes a move
+        /// unambiguous.
+        /// </summary>
+        public List<int> GetAllowedArcs(GameState state, Piece piece)
+        {
+            var allowed = new List<int>();
+            if (piece == null) return allowed;
+
+            PieceRules def = rules.Def(piece.type);
+            BoardTrack track = TrackFor(piece.owner);
+            int steps = def.movesScaleWithDie ? StepsFor(CurrentFace(state)) : 1;
             if (steps == 0) return allowed;
 
             bool canAct = piece.isActive
-                || (piece.canBeActivated && CurrentFace(state) == rules.ResolveFace(rules.dice.activateFace));
+                || (piece.canBeActivated && CurrentFace(state) == ResolveFace(rules.dice.activateFace));
             if (!canAct) return allowed;
 
-            int direction = (state.CurrentPlayer == PieceOwner.P1 ? 1 : -1) * steps;
-
-            if (def.Has(MovePatterns.Forward)) TryAddAllowedPlace(state, piece.placeIndex + direction, allowed, piece);
-            if (def.Has(MovePatterns.Backward)) TryAddAllowedPlace(state, piece.placeIndex - direction, allowed, piece);
+            if (def.Has(MovePatterns.Forward)) TryAddArc(state, track, piece, piece.arc + steps, allowed);
+            if (def.Has(MovePatterns.Backward)) TryAddArc(state, track, piece, piece.arc - steps, allowed);
             if (def.Has(MovePatterns.Vertical))
             {
                 Place origin = state.places[piece.placeIndex];
-                TryAddAllowedPlace(state, IndexFromCoordinates(origin.x, origin.y + steps), allowed, piece);
-                TryAddAllowedPlace(state, IndexFromCoordinates(origin.x, origin.y - steps), allowed, piece);
+                TryAddCrossing(state, track, piece, origin.x, origin.y + steps, allowed);
+                TryAddCrossing(state, track, piece, origin.x, origin.y - steps, allowed);
             }
             return allowed;
         }
@@ -167,7 +289,11 @@ namespace Sahkku.Rules
             return potential;
         }
 
-        /// <summary>Every legal action for the current player; the flat view an LLM NPC would consume.</summary>
+        /// <summary>
+        /// Every legal action for the current player according to the cached
+        /// <see cref="Piece.allowedPlaces"/>. Call <see cref="EvaluateAllowedPlaces"/> first, or use
+        /// <see cref="LegalMoves"/>, which always computes from scratch.
+        /// </summary>
         public List<Move> GetLegalMoves(GameState state)
         {
             var moves = new List<Move>();
@@ -185,6 +311,39 @@ namespace Sahkku.Rules
             return moves;
         }
 
+        /// <summary>Every legal action for the current player, computed from scratch. The flat, LLM-facing view.</summary>
+        public List<Move> LegalMoves(GameState state)
+        {
+            var moves = new List<Move>();
+            if (state.gameOver || state.IsRollPhase) return moves;
+
+            PieceOwner current = state.CurrentPlayer;
+            foreach (Place place in state.places)
+            {
+                foreach (Piece piece in place.pieces)
+                {
+                    if (piece.owner != current) continue;
+                    foreach (int target in GetAllowedPlaces(state, piece))
+                    {
+                        moves.Add(new Move(piece.id, target));
+                    }
+                }
+            }
+            return moves;
+        }
+
+        /// <summary>True when <paramref name="move"/> is a legal action in the current state.</summary>
+        public bool IsLegalMove(GameState state, Move move)
+        {
+            if (state == null) return false;
+            if (state.gameOver || state.IsRollPhase) return false;
+
+            Piece piece = FindPiece(state, move.pieceId);
+            if (piece == null || piece.owner != state.CurrentPlayer) return false;
+            if (move.targetPlaceIndex < 0 || move.targetPlaceIndex >= state.places.Count) return false;
+            return ResolveTargetArc(state, piece, move.targetPlaceIndex) >= 0;
+        }
+
         public Piece FindPiece(GameState state, int pieceId)
         {
             foreach (Place place in state.places)
@@ -198,53 +357,193 @@ namespace Sahkku.Rules
         }
 
         /// <summary>
-        /// Applies a move and returns the presentation events it produced. The caller is expected to
-        /// have called <see cref="EvaluateAllowedPlaces"/> first (as the original UI flow does).
+        /// Applies a move and returns the presentation events it produced. Throws
+        /// <see cref="IllegalMoveException"/> when the move is not legal, so no caller — UI, replay
+        /// file, network message or LLM — can drive the game into an illegal state. Use
+        /// <see cref="TryApplyMove"/> for the non-throwing form.
         /// </summary>
         public List<RuleEvent> ApplyMove(GameState state, Move move)
         {
-            var events = new List<RuleEvent>();
+            List<RuleEvent> events;
+            if (!TryApplyMove(state, move, out events))
+            {
+                throw new IllegalMoveException("Illegal move " + move + " for " + state.CurrentPlayer + " in phase " + state.turnPhase + ".");
+            }
+            return events;
+        }
+
+        /// <summary>Non-throwing <see cref="ApplyMove"/>: false (and no events) for an illegal move.</summary>
+        public bool TryApplyMove(GameState state, Move move, out List<RuleEvent> events)
+        {
+            events = new List<RuleEvent>();
+            if (state == null || state.gameOver || state.IsRollPhase) return false;
+
             Piece piece = FindPiece(state, move.pieceId);
-            if (piece == null || piece.allowedPlaces.Count == 0) return events;
+            if (piece == null || piece.owner != state.CurrentPlayer) return false;
+            if (move.targetPlaceIndex < 0 || move.targetPlaceIndex >= state.places.Count) return false;
+
+            int newArc = ResolveTargetArc(state, piece, move.targetPlaceIndex);
+            if (newArc < 0) return false;
 
             PieceOwner current = state.CurrentPlayer;
             Place target = state.places[move.targetPlaceIndex];
-            var indicesToRemove = new List<int>();
 
-            // Branch order mirrors the original implementation: soldier, king, then queen.
+            ApplyLanding(state, piece, target, current, events);
+
+            // The ruleset may make moving an inactive piece unlock the next one in the queue.
+            SoldierActivationRule activation = rules.activation.onMoveInactivePiece;
+            if (!piece.isActive && rules.Def(piece.type).queuesNextOnActivation)
+            {
+                UnlockNextInQueue(state, piece, current, activation.unlockOffset);
+            }
+
+            state.places[piece.placeIndex].pieces.Remove(piece);
+            piece.isActive = true;
+            piece.placeIndex = move.targetPlaceIndex;
+            piece.arc = TrackFor(piece.owner).Normalize(newArc);
+            target.pieces.Add(piece);
+
+            // A soldier reaching the opponent's home row recruits the neutral king.
+            if (rules.Def(piece.type).recruitsKingOnEnemyHomeRow)
+            {
+                PieceOwner opponent = current == PieceOwner.P1 ? PieceOwner.P2 : PieceOwner.P1;
+                BoardTrack track = TrackFor(current);
+                if (track.RowOfLeg(track.LegOf(newArc)) == TrackFor(opponent).HomeRow)
+                {
+                    RecruitNeutralKing(state, current, events);
+                }
+            }
+
+            if (state.gameOver) return true;
+
+            state.currentActiveDie++;
+            if (state.currentActiveDie >= state.dice.Count)
+            {
+                NextPlayerTurn(state);
+            }
+            else if (!EvaluateAllowedPlaces(state))
+            {
+                NextPlayerTurn(state);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Checks the invariants that must hold in every state. Returns a list of problems; an empty
+        /// list means the state is sound. Used by the tests and available to hosts as a debug aid.
+        /// </summary>
+        public List<string> ValidateState(GameState state)
+        {
+            var problems = new List<string>();
+            if (state == null)
+            {
+                problems.Add("state is null");
+                return problems;
+            }
+
+            var seen = new HashSet<int>();
+            int soldiers = 0;
+            for (int i = 0; i < state.places.Count; ++i)
+            {
+                Place place = state.places[i];
+                bool p1 = false;
+                bool p2 = false;
+                bool royal = false;
+                int sharedWithRoyal = 0;
+
+                foreach (Piece piece in place.pieces)
+                {
+                    if (!seen.Add(piece.id)) problems.Add("piece " + piece.id + " appears on the board more than once");
+                    if (piece.placeIndex != i) problems.Add("piece " + piece.id + " claims place " + piece.placeIndex + " but sits on place " + i);
+                    if (piece.owner == PieceOwner.P1) p1 = true;
+                    if (piece.owner == PieceOwner.P2) p2 = true;
+                    if (piece.type != PieceType.Soldier)
+                    {
+                        royal = true;
+                        sharedWithRoyal = 0;
+                    }
+                    else
+                    {
+                        soldiers++;
+                        sharedWithRoyal++;
+                    }
+
+                    int arcPlace = TrackFor(piece.owner).PlaceOf(piece.arc);
+                    if (arcPlace != piece.placeIndex)
+                        problems.Add("piece " + piece.id + " has arc " + piece.arc + " which points at place " + arcPlace + ", not " + piece.placeIndex);
+
+                    foreach (int allowed in piece.allowedPlaces)
+                    {
+                        if (allowed < 0 || allowed >= state.places.Count) problems.Add("piece " + piece.id + " allows off-board place " + allowed);
+                    }
+                }
+
+                if (p1 && p2) problems.Add("place " + i + " holds pieces of both players");
+                if (royal && place.pieces.Count > 1 && !SharesLineWithItsRecruiter(place))
+                    problems.Add("place " + i + " makes a royal piece share its line");
+            }
+
+            if (soldiers + state.p1Captures + state.p2Captures != 2 * rules.board.width)
+                problems.Add("soldiers are not conserved: " + soldiers + " on board plus " + state.p1Captures + " and " +
+                             state.p2Captures + " captures is not " + (2 * rules.board.width));
+
+            if (state.gameOver && state.winner == PieceOwner.None) problems.Add("the game is over without a winner");
+            if (!state.gameOver && state.winner != PieceOwner.None) problems.Add("a winner is set but the game is not over");
+            if (state.currentActiveDie < 0 || state.currentActiveDie >= state.dice.Count)
+                problems.Add("currentActiveDie " + state.currentActiveDie + " is out of range");
+            if (!rules.win.opponentSoldiersExhausted && state.gameOver) problems.Add("the game ended although the ruleset declares no win condition");
+            return problems;
+        }
+
+        public void NextPlayerTurn(GameState state)
+        {
+            ClearAllowedPlaces(state);
+            state.currentActiveDie = 0;
+            state.turnPhase = state.CurrentPlayer == PieceOwner.P2 ? TurnPhase.P1roll : TurnPhase.P2roll;
+        }
+
+        // ------------------------------------------------------------------ internals
+
+        static bool SharesLineWithItsRecruiter(Place place)
+        {
+            // The ruleset's one exception: a piece that moved onto the king to recruit it stays on
+            // the king's line until one of the two moves away.
+            if (place.pieces.Count != 2) return false;
+            Piece king = place.pieces[0];
+            return king.type == PieceType.King && place.pieces[1].owner == king.owner;
+        }
+
+        void ApplyLanding(GameState state, Piece piece, Place target, PieceOwner current, List<RuleEvent> events)
+        {
+            var indicesToRemove = new List<int>();
+            bool endedByCapture = false;
+
             for (int i = 0; i < target.pieces.Count; ++i)
             {
                 Piece other = target.pieces[i];
+                if (other.owner == current) continue;
+
                 PieceRules otherRules = rules.Def(other.type);
-
-                if (other.type == PieceType.Soldier && other.owner != current && otherRules.capturable)
-                {
-                    indicesToRemove.Add(i);
-                    events.Add(MakeEvent(RuleEventKind.SoldierCaptured, other.type, current));
-
-                    if (current == PieceOwner.P1) state.p1Captures++;
-                    else state.p2Captures++;
-
-                    int captures = current == PieceOwner.P1 ? state.p1Captures : state.p2Captures;
-                    if (captures == rules.win.soldierCapturesToWin)
-                    {
-                        state.gameOver = true;
-                        state.winner = current;
-                        events.Add(MakeEvent(RuleEventKind.GameWon, other.type, current, current));
-                    }
-                }
-                else if (other.type == PieceType.King && otherRules.recruitedWhenLanded)
+                if (otherRules.recruitedWhenLanded)
                 {
                     other.owner = current;
+                    other.arc = ArcForPiece(other);
                     events.Add(MakeEvent(RuleEventKind.KingRecruited, other.type, current));
                 }
-                else if (other.type == PieceType.Queen && otherRules.capturable)
+                else if (otherRules.capturable)
                 {
                     indicesToRemove.Add(i);
-                    state.gameOver = true;
-                    state.winner = current;
-                    events.Add(MakeEvent(RuleEventKind.QueenCaptured, other.type, current));
-                    events.Add(MakeEvent(RuleEventKind.GameWon, other.type, current, current));
+                    if (otherRules.landingEndsGame) endedByCapture = true;
+                    events.Add(MakeEvent(
+                        otherRules.landingEndsGame ? RuleEventKind.QueenCaptured : RuleEventKind.SoldierCaptured,
+                        other.type, current));
+
+                    // The capture counters score soldiers taken, and the host shows them as such.
+                    if (!otherRules.landingEndsGame)
+                    {
+                        if (current == PieceOwner.P1) state.p1Captures++;
+                        else state.p2Captures++;
+                    }
                 }
             }
 
@@ -258,55 +557,142 @@ namespace Sahkku.Rules
                 target.pieces.RemoveAt(indicesToRemove[i]);
             }
 
-            // Moving an inactive soldier makes the neighbouring soldier activatable.
-            SoldierActivationRule activation = rules.activation.onMoveInactiveSoldier;
-            if (activation != null && !piece.isActive && piece.type == PieceType.Soldier)
-            {
-                int sign = (activation.perPlayerSign && current == PieceOwner.P2) ? -1 : 1;
-                int neighbour = piece.placeIndex + sign * activation.offset;
-                if (neighbour >= 0 && neighbour < state.places.Count && state.places[neighbour].pieces.Count > 0)
-                {
-                    state.places[neighbour].pieces[0].canBeActivated = true;
-                }
-            }
-
-            state.places[piece.placeIndex].pieces.Remove(piece);
-            piece.isActive = true;
-            piece.placeIndex = move.targetPlaceIndex;
-            target.pieces.Add(piece);
-
-            // A soldier reaching the enemy's home territory recruits the neutral king.
-            if (piece.type == PieceType.Soldier && rules.Def(PieceType.King).recruitedOnEnemyTerritory)
-            {
-                bool enemyTerritory = current == PieceOwner.P1
-                    ? move.targetPlaceIndex >= state.places.Count - rules.board.width
-                    : move.targetPlaceIndex < rules.board.width;
-                if (enemyTerritory) ActivateKing(state, current);
-            }
-
-            if (state.gameOver) return events;
-
-            state.currentActiveDie++;
-            if (state.currentActiveDie >= state.dice.Count)
-            {
-                NextPlayerTurn(state);
-            }
-            else if (!EvaluateAllowedPlaces(state))
-            {
-                NextPlayerTurn(state);
-            }
-            return events;
+            if (indicesToRemove.Count > 0) CheckWinAfterCapture(state, current, endedByCapture, events);
         }
 
-        public void NextPlayerTurn(GameState state)
+        void CheckWinAfterCapture(GameState state, PieceOwner current, bool endedByCapture, List<RuleEvent> events)
         {
-            ClearAllowedPlaces(state);
-            state.currentActiveDie = 0;
-            state.turnPhase = state.CurrentPlayer == PieceOwner.P2 ? TurnPhase.P1roll : TurnPhase.P2roll;
+            PieceOwner opponent = current == PieceOwner.P1 ? PieceOwner.P2 : PieceOwner.P1;
+
+            if (endedByCapture)
+            {
+                EndGame(state, current, WinReason.QueenCaptured, PieceType.Queen, events);
+                return;
+            }
+
+            if (rules.win.opponentSoldiersExhausted && CountSoldiers(state, opponent) == 0)
+            {
+                EndGame(state, current, WinReason.OpponentSoldiersExhausted, PieceType.Soldier, events);
+            }
+        }
+
+        static void EndGame(GameState state, PieceOwner winner, WinReason reason, PieceType lastPieceType, List<RuleEvent> events)
+        {
+            state.gameOver = true;
+            state.winner = winner;
+            state.winReason = reason;
+            events.Add(MakeEvent(RuleEventKind.GameWon, lastPieceType, winner, winner));
+        }
+
+        void RecruitNeutralKing(GameState state, PieceOwner current, List<RuleEvent> events)
+        {
+            foreach (Place place in state.places)
+            {
+                foreach (Piece piece in place.pieces)
+                {
+                    if (piece.type != PieceType.King || piece.isActive) continue;
+                    piece.isActive = true;
+                    piece.owner = current;
+                    piece.arc = ArcForPiece(piece);
+                    events.Add(MakeEvent(RuleEventKind.KingRecruited, piece.type, current));
+                }
+            }
+        }
+
+        /// <summary>Makes the piece one home-row line further back than the mover's source activatable.</summary>
+        void UnlockNextInQueue(GameState state, Piece mover, PieceOwner current, int unlockOffset)
+        {
+            BoardTrack track = TrackFor(current);
+            int sourceOffset = track.ArcOfPlaceInLeg(0, mover.placeIndex);
+            if (sourceOffset < 0) return;
+
+            int targetOffset = track.OffsetOf(sourceOffset) + unlockOffset;
+            if (targetOffset < 0 || targetOffset >= rules.board.width) return;
+
+            int neighbour = track.PlaceOf(targetOffset);
+            if (neighbour < 0 || neighbour >= state.places.Count) return;
+            if (state.places[neighbour].pieces.Count == 0) return;
+            state.places[neighbour].pieces[0].canBeActivated = true;
+        }
+
+        int CountSoldiers(GameState state, PieceOwner owner)
+        {
+            int count = 0;
+            foreach (Place place in state.places)
+            {
+                foreach (Piece piece in place.pieces)
+                {
+                    if (piece.owner == owner && piece.type == PieceType.Soldier) count++;
+                }
+            }
+            return count;
+        }
+
+        /// <summary>The arc a piece's current cell maps to on its owner's track (used when ownership changes).</summary>
+        int ArcForPiece(Piece piece)
+        {
+            int arc = TrackFor(piece.owner).FirstArcOf(piece.placeIndex);
+            if (arc < 0) throw new RuleSetException("Piece " + piece.id + " stands on place " + piece.placeIndex + ", which is not on the track.");
+            return arc;
+        }
+
+        /// <summary>
+        /// The arc a move onto <paramref name="targetPlace"/> departs from, or -1 when the piece cannot
+        /// reach that cell with the die currently up for spending. Two arcs point at the same
+        /// middle-row cell, so the arc — not the cell — is what makes a move unambiguous.
+        /// </summary>
+        int ResolveTargetArc(GameState state, Piece piece, int targetPlace)
+        {
+            BoardTrack track = TrackFor(piece.owner);
+            foreach (int arc in GetAllowedArcs(state, piece))
+            {
+                if (track.PlaceOf(arc) == targetPlace) return arc;
+            }
+            return -1;
+        }
+
+        void TryAddArc(GameState state, BoardTrack track, Piece piece, int arc, List<int> allowed)
+        {
+            int normalized = track.Normalize(arc);
+            int place = track.PlaceOf(normalized);
+            if (place < 0) return;
+            if (!CanLandOn(state, piece, place)) return;
+            if (!allowed.Contains(normalized)) allowed.Add(normalized);
+        }
+
+        void TryAddCrossing(GameState state, BoardTrack track, Piece piece, int x, int row, List<int> allowed)
+        {
+            if (x < 0 || x >= rules.board.width) return;
+            if (row < 0 || row >= rules.board.height) return;
+
+            int place = BoardLayout.IndexFromCoordinates(rules.board.width, rules.board.height, x, row);
+            if (place < 0) return;
+
+            int arc = track.CrossingArc(piece.arc, row, place);
+            if (arc < 0) return;
+            if (!CanLandOn(state, piece, place)) return;
+            if (!allowed.Contains(arc)) allowed.Add(arc);
+        }
+
+        bool CanLandOn(GameState state, Piece mover, int place)
+        {
+            Place target = state.places[place];
+            if (target.pieces.Count == 0) return true;
+
+            Piece top = target.pieces[0];
+            if (!top.isActive) return rules.inactive.enterable;
+
+            bool ownUnit = top.owner == mover.owner;
+            if (rules.Def(top.type).blocksOwnLanding && ownUnit) return false;
+            if (rules.Def(mover.type).cannotLandOnOwnUnits && ownUnit) return false;
+            return true;
         }
 
         DieFace CurrentFace(GameState state)
         {
+            if (state.dice.Count == 0) throw new RuleSetException("The ruleset must declare at least one die.");
+            if (state.currentActiveDie < 0 || state.currentActiveDie >= state.dice.Count)
+                throw new IllegalMoveException("The active die index is out of range.");
             return state.dice[state.currentActiveDie];
         }
 
@@ -319,47 +705,32 @@ namespace Sahkku.Rules
         {
             if (index < 0 || index >= rules.dice.faces.Length)
                 throw new RuleSetException("Die face index " + index + " is out of range.");
-            return (DieFace)index;
+            return ResolveFace(rules.dice.faces[index].id);
         }
 
-        void TryAddAllowedPlace(GameState state, int indexTarget, List<int> allowed, Piece mover)
+        bool CanRerollFace(DieFace face)
         {
-            if (indexTarget < 0 || indexTarget > state.places.Count - 1) return;
-
-            Place target = state.places[indexTarget];
-            if (target.pieces.Count == 0)
+            string id = RuleSet.FaceId(face);
+            for (int i = 0; i < rules.dice.reroll.faces.Length; ++i)
             {
-                allowed.Add(indexTarget);
-                return;
+                if (rules.dice.reroll.faces[i] == id) return true;
             }
-
-            Piece top = target.pieces[0];
-            bool ownUnit = top.owner == state.CurrentPlayer;
-            if (top.isActive
-                && !(rules.Def(top.type).blocksOwnLanding && ownUnit)
-                && !(rules.Def(mover.type).cannotLandOnOwnUnits && ownUnit))
-            {
-                allowed.Add(indexTarget);
-            }
+            return false;
         }
 
-        void ActivateKing(GameState state, PieceOwner current)
+        DieFace ResolveFace(string id)
         {
-            foreach (Place place in state.places)
-            {
-                foreach (Piece piece in place.pieces)
-                {
-                    if (piece.type == PieceType.King && !piece.isActive)
-                    {
-                        state.places[piece.placeIndex].pieces[0].isActive = true;
-                        state.places[piece.placeIndex].pieces[0].owner = current;
-                    }
-                }
-            }
+            return rules.ResolveFace(id);
+        }
+
+        BoardTrack TrackFor(PieceOwner owner)
+        {
+            return owner == PieceOwner.P2 ? trackP2 : trackP1;
         }
 
         void BuildPlaces(GameState state)
         {
+            // Snake order, so that place index == IndexFromCoordinates(place.x, place.y).
             for (int y = 0; y < rules.board.height; ++y)
             {
                 for (int i = 0; i < rules.board.width; ++i)
@@ -372,9 +743,9 @@ namespace Sahkku.Rules
 
         void AddSoldiers(GameState state, PieceOwner owner, RowPlacement placement, ref int nextId)
         {
-            for (int i = 0; i < rules.board.width; ++i)
+            for (int x = 0; x < rules.board.width; ++x)
             {
-                int index = placement.row * rules.board.width + i;
+                int index = BoardLayout.IndexFromCoordinates(rules.board.width, rules.board.height, x, placement.row);
                 state.places[index].pieces.Add(new Piece(nextId++, index, PieceType.Soldier, owner));
             }
         }
@@ -386,19 +757,50 @@ namespace Sahkku.Rules
             state.places[index].pieces.Add(new Piece(nextId++, index, type, owner));
         }
 
-        void ApplyCoordinates(GameState state, CoordRules[] coordinates, System.Action<Piece> apply)
+        /// <summary>
+        /// Marks the leading soldiers of a player's home row active. The activation queue runs from
+        /// the foremost soldier — the one whose forward move leaves the home row — towards the rear,
+        /// so "the first N soldiers are loose" fully describes the starting position.
+        /// </summary>
+        void ApplyVariant(GameState state, PieceOwner owner, VariantRules variant)
         {
-            if (coordinates == null) return;
-            foreach (CoordRules coordinate in coordinates)
+            BoardTrack track = TrackFor(owner);
+            int homeRow = track.HomeRow;
+
+            var soldiers = new List<Piece>();
+            var arcs = new List<int>();
+            foreach (Place place in state.places)
             {
-                int index = IndexFromCoordinates(coordinate.x, coordinate.y);
-                if (index < 0) throw new RuleSetException("Variant coordinate (" + coordinate.x + ", " + coordinate.y + ") is off the board.");
-                if (state.places[index].pieces.Count > 0) apply(state.places[index].pieces[0]);
+                if (place.y != homeRow) continue;
+                foreach (Piece piece in place.pieces)
+                {
+                    if (piece.owner != owner || piece.type != PieceType.Soldier) continue;
+                    int arc = track.ArcOfPlaceInLeg(0, piece.placeIndex);
+                    if (arc < 0) continue;
+                    soldiers.Add(piece);
+                    arcs.Add(arc);
+                }
+            }
+
+            // Foremost first: the soldier furthest along the home-row leg.
+            for (int i = 0; i < soldiers.Count; ++i)
+            {
+                for (int j = i + 1; j < soldiers.Count; ++j)
+                {
+                    if (arcs[j] > arcs[i])
+                    {
+                        int arc = arcs[i]; arcs[i] = arcs[j]; arcs[j] = arc;
+                        Piece piece = soldiers[i]; soldiers[i] = soldiers[j]; soldiers[j] = piece;
+                    }
+                }
+            }
+
+            for (int i = 0; i < soldiers.Count; ++i)
+            {
+                if (i < variant.soldiersActive) soldiers[i].isActive = true;
+                else if (i == variant.soldiersActive) soldiers[i].canBeActivated = true;
             }
         }
-
-        static void MarkActive(Piece piece) { piece.isActive = true; }
-        static void MarkActivatable(Piece piece) { piece.canBeActivated = true; }
 
         static PieceOwner ResolveOwner(string owner)
         {

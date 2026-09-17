@@ -120,27 +120,25 @@ public class GameInteraction : MonoBehaviour
     {
         if(GameLogic.Instance.gameOver)
         {
-            if(GameLogic.Instance.winner == GameSettings.Player.One)
+            // The engine reports why the game ended, so the UI never re-derives a rule.
+            bool soldiersExhausted = GameLogic.Instance.winReason == WinReason.OpponentSoldiersExhausted;
+            bool playerOneWon = GameLogic.Instance.winner == GameSettings.Player.One;
+
+            if (playerOneWon && soldiersExhausted)
             {
-                if(GameLogic.Instance.p1captures == GameLogic.BOARD_SIZE_X)
-                {
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Soldier");
-                }
-                else
-                {
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Queen");
-                }
+                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Soldier");
+            }
+            else if (playerOneWon)
+            {
+                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Queen");
+            }
+            else if (soldiersExhausted)
+            {
+                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Win_Soldier");
             }
             else
             {
-                if (GameLogic.Instance.p2captures == GameLogic.BOARD_SIZE_X)
-                {
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Soldier");
-                }
-                else
-                {
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Win_Queen");
-                }
+                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Win_Queen");
             }
         }
         else
@@ -195,23 +193,23 @@ public class GameInteraction : MonoBehaviour
             BackToMainMenu();
         }
 
-        bool ìnteractionThisFrame = false;
+        bool interactionThisFrame = false;
         Vector2 interactionPosition = Vector2.zero;
         if(Touchscreen.current != null)
         {
             if (Touchscreen.current.touches.Count > 0)
             {
-                ìnteractionThisFrame = Touchscreen.current.touches[0].press.wasPressedThisFrame;
+                interactionThisFrame = Touchscreen.current.touches[0].press.wasPressedThisFrame;
                 interactionPosition = Touchscreen.current.touches[0].position.ReadValue();
             }
         }
         else if (Mouse.current != null)
         {
-            ìnteractionThisFrame = Mouse.current.leftButton.wasPressedThisFrame;
+            interactionThisFrame = Mouse.current.leftButton.wasPressedThisFrame;
             interactionPosition = Mouse.current.position.ReadValue();
         }
 
-        if (ìnteractionThisFrame && (GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move))
+        if (interactionThisFrame && (GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move))
         {
             Ray ray = camera.ScreenPointToRay(interactionPosition);
             if(Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P1 ? p1mask : p2mask))

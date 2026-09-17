@@ -255,9 +255,12 @@ namespace Sahkku.Rules
                 id = root.Get("id") == null ? null : root.Get("id").AsStringOrNull(),
                 version = root.Get("version") == null ? 0 : root.Get("version").AsInt(),
                 board = ParseBoard(root.Require("board")),
+                track = ParseTrack(root.Require("track")),
                 pieces = ParsePieces(root.Require("pieces")),
                 dice = ParseDice(root.Require("dice")),
                 activation = ParseActivation(root.Require("activation")),
+                inactive = ParseInactive(root.Require("inactive")),
+                start = ParseStart(root.Require("start")),
                 setup = ParseSetup(root.Require("setup")),
                 variants = ParseVariants(root.Require("variants")),
                 win = ParseWin(root.Require("win"))
@@ -274,6 +277,21 @@ namespace Sahkku.Rules
                 height = value.Require("height").AsInt(),
                 layout = value.Require("layout").AsString()
             };
+        }
+
+        static TrackRules ParseTrack(JsonValue value)
+        {
+            JsonValue legs = value.Require("legs");
+            var list = new List<TrackLegRules>();
+            foreach (JsonValue leg in legs.Items())
+            {
+                list.Add(new TrackLegRules
+                {
+                    row = leg.Require("row").AsInt(),
+                    direction = leg.Require("direction").AsString()
+                });
+            }
+            return new TrackRules { legs = list.ToArray() };
         }
 
         static PieceSetRules ParsePieces(JsonValue value)
@@ -293,12 +311,13 @@ namespace Sahkku.Rules
                 moves = ParseStringArray(value.Require("moves")),
                 movesScaleWithDie = value.Require("movesScaleWithDie").AsBool(),
                 startActivatable = value.Require("startActivatable").AsBool(),
+                queuesNextOnActivation = value.Require("queuesNextOnActivation").AsBool(),
                 blocksOwnLanding = value.Require("blocksOwnLanding").AsBool(),
                 cannotLandOnOwnUnits = value.Require("cannotLandOnOwnUnits").AsBool(),
                 capturable = value.Require("capturable").AsBool(),
                 recruitedWhenLanded = value.Require("recruitedWhenLanded").AsBool(),
                 landingEndsGame = value.Require("landingEndsGame").AsBool(),
-                recruitedOnEnemyTerritory = value.Require("recruitedOnEnemyTerritory").AsBool()
+                recruitsKingOnEnemyHomeRow = value.Require("recruitsKingOnEnemyHomeRow").AsBool()
             };
         }
 
@@ -317,26 +336,42 @@ namespace Sahkku.Rules
             return new DiceRules
             {
                 count = value.Require("count").AsInt(),
-                order = value.Require("order").AsString(),
                 activateFace = value.Require("activateFace").AsString(),
-                rerollFace = value.Get("rerollFace") == null ? null : value.Get("rerollFace").AsString(),
-                rerollRequiresFirstDie = value.Require("rerollRequiresFirstDie").AsBool(),
+                useOrder = ParseStringArray(value.Require("useOrder")),
+                reroll = ParseReroll(value.Require("reroll")),
                 faces = list.ToArray()
+            };
+        }
+
+        static RerollRules ParseReroll(JsonValue value)
+        {
+            return new RerollRules
+            {
+                faces = ParseStringArray(value.Require("faces")),
+                beforeUsingAnyDie = value.Require("beforeUsingAnyDie").AsBool()
             };
         }
 
         static ActivationRules ParseActivation(JsonValue value)
         {
-            JsonValue rule = value.Require("onMoveInactiveSoldier");
+            JsonValue rule = value.Require("onMoveInactivePiece");
             return new ActivationRules
             {
-                onMoveInactiveSoldier = new SoldierActivationRule
+                onMoveInactivePiece = new SoldierActivationRule
                 {
-                    relativeTo = rule.Require("relativeTo").AsString(),
-                    offset = rule.Require("offset").AsInt(),
-                    perPlayerSign = rule.Require("perPlayerSign").AsBool()
+                    unlockOffset = rule.Require("unlockOffset").AsInt()
                 }
             };
+        }
+
+        static InactiveRules ParseInactive(JsonValue value)
+        {
+            return new InactiveRules { enterable = value.Require("enterable").AsBool() };
+        }
+
+        static StartRules ParseStart(JsonValue value)
+        {
+            return new StartRules { mode = value.Require("mode").AsString() };
         }
 
         static SetupRules ParseSetup(JsonValue value)
@@ -396,27 +431,15 @@ namespace Sahkku.Rules
         {
             return new VariantRules
             {
-                active = ParseCoordinates(value.Get("active")),
-                activatable = ParseCoordinates(value.Get("activatable"))
+                soldiersActive = value.Require("soldiersActive").AsInt()
             };
-        }
-
-        static CoordRules[] ParseCoordinates(JsonValue value)
-        {
-            if (value == null) return new CoordRules[0];
-            var list = new List<CoordRules>();
-            foreach (JsonValue item in value.Items())
-            {
-                list.Add(new CoordRules { x = item.Require("x").AsInt(), y = item.Require("y").AsInt() });
-            }
-            return list.ToArray();
         }
 
         static WinRules ParseWin(JsonValue value)
         {
             return new WinRules
             {
-                soldierCapturesToWin = value.Require("soldierCapturesToWin").AsInt()
+                opponentSoldiersExhausted = value.Require("opponentSoldiersExhausted").AsBool()
             };
         }
 

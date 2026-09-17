@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Sahkku.Rules
@@ -18,9 +19,8 @@ namespace Sahkku.Rules
     }
 
     /// <summary>
-    /// Outcome of a four-sided sáhkku stick die (birccut). The numeric order is significant:
-    /// dice are ordered ascending by this value (matching the original <c>dice.Sort()</c>) and the
-    /// ruleset face list must be authored in this same order (sahhku, three, two, zero).
+    /// Identity of a sáhkku die face (birccu). Purely an identity: the ruleset decides how many
+    /// steps each face is worth and in which order faces must be spent.
     /// </summary>
     public enum DieFace
     {
@@ -38,12 +38,44 @@ namespace Sahkku.Rules
         P2move = 3
     }
 
+    /// <summary>Why the game ended. Lets a host pick the right message without re-deriving rules.</summary>
+    public enum WinReason
+    {
+        None = 0,
+
+        /// <summary>The loser has no soldiers left on the board.</summary>
+        OpponentSoldiersExhausted = 1,
+
+        /// <summary>The loser's queen was captured.</summary>
+        QueenCaptured = 2
+    }
+
+    /// <summary>
+    /// Thrown when a caller asks the engine to apply an action that is not legal in the current
+    /// state. Distinct from <see cref="RuleSetException"/>, which means the *ruleset* is broken.
+    /// </summary>
+    public sealed class IllegalMoveException : Exception
+    {
+        public IllegalMoveException(string message) : base(message) { }
+    }
+
     /// <summary>A single playing piece. It lives on exactly one <see cref="Place"/>.</summary>
     public class Piece
     {
         /// <summary>Stable identity used to refer to a piece from a <see cref="Move"/>.</summary>
         public int id;
+
+        /// <summary>Index into <see cref="GameState.places"/>; the board square the piece occupies.</summary>
         public int placeIndex;
+
+        /// <summary>
+        /// Position along its owner's track (see <see cref="TrackRules"/>), in <c>[0, TrackLength)</c>.
+        /// <see cref="placeIndex"/> is derived from it, so the two can never disagree. Two arcs can
+        /// map onto the same middle-row place, which is exactly why this cannot be derived back
+        /// from <see cref="placeIndex"/> and has to be stored.
+        /// </summary>
+        public int arc;
+
         public PieceType type;
         public PieceOwner owner;
         public bool isActive;
@@ -54,6 +86,7 @@ namespace Sahkku.Rules
         {
             this.id = id;
             this.placeIndex = placeIndex;
+            this.arc = placeIndex;
             this.type = type;
             this.owner = owner;
             this.isActive = isActive;
@@ -88,6 +121,7 @@ namespace Sahkku.Rules
         public int currentActiveDie;
         public bool gameOver;
         public PieceOwner winner = PieceOwner.None;
+        public WinReason winReason = WinReason.None;
         public int p1Captures;
         public int p2Captures;
 
@@ -95,6 +129,44 @@ namespace Sahkku.Rules
         public PieceOwner CurrentPlayer
         {
             get { return (int)turnPhase < 2 ? PieceOwner.P1 : PieceOwner.P2; }
+        }
+
+        /// <summary>True while the current player still has to roll (or reroll) dice.</summary>
+        public bool IsRollPhase
+        {
+            get { return turnPhase == TurnPhase.P1roll || turnPhase == TurnPhase.P2roll; }
+        }
+
+        /// <summary>Deep copy, for search (LLM NPCs) and for tests that need to try a move twice.</summary>
+        public GameState Clone()
+        {
+            var copy = new GameState
+            {
+                turnPhase = turnPhase,
+                currentActiveDie = currentActiveDie,
+                gameOver = gameOver,
+                winner = winner,
+                winReason = winReason,
+                p1Captures = p1Captures,
+                p2Captures = p2Captures
+            };
+            copy.dice.AddRange(dice);
+            foreach (Place place in places)
+            {
+                var placeCopy = new Place(place.x, place.y);
+                foreach (Piece piece in place.pieces)
+                {
+                    var pieceCopy = new Piece(piece.id, piece.placeIndex, piece.type, piece.owner, piece.isActive)
+                    {
+                        arc = piece.arc,
+                        canBeActivated = piece.canBeActivated
+                    };
+                    pieceCopy.allowedPlaces.AddRange(piece.allowedPlaces);
+                    placeCopy.pieces.Add(pieceCopy);
+                }
+                copy.places.Add(placeCopy);
+            }
+            return copy;
         }
     }
 

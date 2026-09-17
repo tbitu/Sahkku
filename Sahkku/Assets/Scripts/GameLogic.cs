@@ -34,6 +34,7 @@ public class GameLogic : MonoBehaviour
     public int currentActiveDie { get { return state.currentActiveDie; } set { state.currentActiveDie = value; } }
     public bool gameOver { get { return state.gameOver; } }
     public GameSettings.Player winner { get { return state.winner == PieceOwner.P2 ? GameSettings.Player.Two : GameSettings.Player.One; } }
+    public WinReason winReason { get { return state.winReason; } }
     public int p1captures { get { return state.p1Captures; } }
     public int p2captures { get { return state.p2Captures; } }
 
@@ -66,21 +67,20 @@ public class GameLogic : MonoBehaviour
             {
                 if (turnPhase == TurnPhase.P1roll || turnPhase == TurnPhase.P2roll)
                 {
-                    ThrowAllDice();
-                    engine.OrderDice(state);
-                    currentActiveDie = 0;
-                    turnPhase = (TurnPhase)((int)turnPhase + 1);
+                    // The engine rolls, puts the dice into the ruleset's spending order, opens the move
+                    // phase and hands the turn over when the first die cannot be used.
+                    engine.RollAndBeginTurn(state, randomSource);
+                    AnimateDiceThrow();
                 }
                 else
                 {
-                    RerollSingleDie();
+                    engine.RerollFirstDie(state, randomSource);
+                    GameInteraction.Instance.RollDice(currentActiveDie);
                     engine.OrderDice(state);
+                    AudioManager.Instance.PlayRandomSound("BircutOkta", 8, 0.5f);
                 }
 
-                if (!CheckAllowedPieceMovement())
-                {
-                    NextPlayerTurn();
-                }
+                GameInteraction.Instance.UpdatePieces();
             }
         }
 
@@ -103,7 +103,7 @@ public class GameLogic : MonoBehaviour
                 if (GameSettings.singlePlayer && GetCurrentPlayer() == PieceOwner.P2)
                 {
                     Move aiMove;
-                    if (actionSelector.TryChooseAction(state, engine.GetLegalMoves(state), out aiMove))
+                    if (actionSelector.TryChooseAction(state, engine.LegalMoves(state), out aiMove))
                     {
                         MovePiece(engine.FindPiece(state, aiMove.pieceId), aiMove.targetPlaceIndex);
                     }
@@ -158,23 +158,22 @@ public class GameLogic : MonoBehaviour
 
         Debug.Log("Move piece (" + piece.type + ") to place " + placeIndex);
 
-        List<RuleEvent> events = engine.ApplyMove(state, new Move(piece.id, placeIndex));
+        List<RuleEvent> events;
+        try
+        {
+            events = engine.ApplyMove(state, new Move(piece.id, placeIndex));
+        }
+        catch (IllegalMoveException exception)
+        {
+            // The engine refuses illegal moves outright; the UI only ever offers legal ones, so this
+            // means a stale selection rather than a rule bug.
+            Debug.LogWarning("Ignoring illegal move: " + exception.Message, gameObject);
+            GameInteraction.Instance.UpdatePieces();
+            return;
+        }
+
         PlayRuleEvents(events);
-
         GameInteraction.Instance.UpdatePieces();
-    }
-
-    void NextPlayerTurn()
-    {
-        engine.NextPlayerTurn(state);
-        GameInteraction.Instance.UpdatePieces();
-    }
-
-    bool CheckAllowedPieceMovement()
-    {
-        bool anyAllowedPlaces = engine.EvaluateAllowedPlaces(state);
-        GameInteraction.Instance.UpdatePieces();
-        return anyAllowedPlaces;
     }
 
     void ClearAllAllowedPlaces()
@@ -183,21 +182,13 @@ public class GameLogic : MonoBehaviour
         GameInteraction.Instance.UpdatePieces();
     }
 
-    void ThrowAllDice()
+    void AnimateDiceThrow()
     {
-        engine.RollAllDice(state, randomSource);
         for (int i = 0; i < state.dice.Count; ++i)
         {
             GameInteraction.Instance.RollDice(i);
         }
         AudioManager.Instance.PlayRandomSound("BircutGolbma", 13, 0.5f);
-    }
-
-    void RerollSingleDie()
-    {
-        engine.RerollFirstDie(state, randomSource);
-        GameInteraction.Instance.RollDice(0);
-        AudioManager.Instance.PlayRandomSound("BircutOkta", 8, 0.5f);
     }
 
     void PlayRuleEvents(List<RuleEvent> events)

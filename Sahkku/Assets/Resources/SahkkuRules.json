@@ -1,6 +1,6 @@
 {
-  "id": "sahkku.lagesvuotna.standard",
-  "version": 1,
+  "id": "sahkku.lagesvuotna.unjarga.vuonnamarkan",
+  "version": 2,
 
   "board": {
     "width": 15,
@@ -8,62 +8,82 @@
     "layout": "rowMajorSnake"
   },
 
+  "track": {
+    "legs": [
+      { "row": 0, "direction": "right" },
+      { "row": 1, "direction": "left" },
+      { "row": 2, "direction": "right" },
+      { "row": 1, "direction": "left" }
+    ]
+  },
+
   "pieces": {
     "soldier": {
       "moves": ["forward"],
       "movesScaleWithDie": true,
       "startActivatable": false,
+      "queuesNextOnActivation": true,
       "blocksOwnLanding": false,
       "cannotLandOnOwnUnits": false,
       "capturable": true,
       "recruitedWhenLanded": false,
       "landingEndsGame": false,
-      "recruitedOnEnemyTerritory": false
+      "recruitsKingOnEnemyHomeRow": true
     },
     "queen": {
       "moves": ["forward", "backward", "vertical"],
       "movesScaleWithDie": true,
       "startActivatable": true,
+      "queuesNextOnActivation": false,
       "blocksOwnLanding": true,
       "cannotLandOnOwnUnits": true,
       "capturable": true,
       "recruitedWhenLanded": false,
       "landingEndsGame": true,
-      "recruitedOnEnemyTerritory": false
+      "recruitsKingOnEnemyHomeRow": false
     },
     "king": {
       "moves": ["forward", "backward", "vertical"],
       "movesScaleWithDie": true,
       "startActivatable": false,
+      "queuesNextOnActivation": false,
       "blocksOwnLanding": true,
       "cannotLandOnOwnUnits": true,
       "capturable": false,
       "recruitedWhenLanded": true,
       "landingEndsGame": false,
-      "recruitedOnEnemyTerritory": true
+      "recruitsKingOnEnemyHomeRow": false
     }
   },
 
   "dice": {
     "count": 3,
-    "order": "ascendingFaceId",
     "activateFace": "sahhku",
-    "rerollFace": "sahhku",
-    "rerollRequiresFirstDie": true,
+    "useOrder": ["sahhku", "three", "two", "zero"],
+    "reroll": {
+      "faces": ["sahhku"],
+      "beforeUsingAnyDie": true
+    },
     "faces": [
       { "id": "sahhku", "steps": 1 },
-      { "id": "three",  "steps": 3 },
-      { "id": "two",    "steps": 2 },
-      { "id": "zero",   "steps": 0 }
+      { "id": "three", "steps": 3 },
+      { "id": "two", "steps": 2 },
+      { "id": "zero", "steps": 0 }
     ]
   },
 
   "activation": {
-    "onMoveInactiveSoldier": {
-      "relativeTo": "source",
-      "offset": -1,
-      "perPlayerSign": true
+    "onMoveInactivePiece": {
+      "unlockOffset": -1
     }
+  },
+
+  "inactive": {
+    "enterable": false
+  },
+
+  "start": {
+    "mode": "firstSahhku"
   },
 
   "setup": {
@@ -80,29 +100,14 @@
 
   "variants": {
     "standard": {
-      "active": [],
-      "activatable": [
-        { "x": 14, "y": 0 },
-        { "x": 0,  "y": 2 }
-      ]
+      "soldiersActive": 0
     },
     "evenOdds": {
-      "active": [
-        { "x": 14, "y": 0 },
-        { "x": 0,  "y": 2 },
-        { "x": 13, "y": 0 },
-        { "x": 1,  "y": 2 },
-        { "x": 12, "y": 0 },
-        { "x": 2,  "y": 2 }
-      ],
-      "activatable": [
-        { "x": 11, "y": 0 },
-        { "x": 3,  "y": 2 }
-      ]
+      "soldiersActive": 3
     }
   },
 
   "win": {
-    "soldierCapturesToWin": 15
+    "opponentSoldiersExhausted": true
   }
 }
