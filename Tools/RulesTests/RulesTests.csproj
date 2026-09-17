@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless runner for the rules engine tests (Assets/Tests/Rules).
+
+    The engine (Sahkku.Rules) only depends on System.*, so the exact same sources that Unity
+    compiles also compile here. This project exists so `dotnet test Tools/RulesTests` can verify
+    the rules — including the shipped SahkkuRules.json — without a Unity installation, which makes
+    the ruleset CI-verifiable.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Sahkku.Rules.Tests.Headless</AssemblyName>
+    <RootNamespace>Sahkku.Rules.Tests</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The Unity sources are old-style C#; keep warnings from failing the run for now. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Sahkku/Assets/Scripts/Rules/**/*.cs" />
+    <Compile Include="../../Sahkku/Assets/Tests/Rules/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <!-- NUnit 3.x to match the classic API Unity's Test Runner ships (Assert.AreEqual etc.). -->
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+</Project>

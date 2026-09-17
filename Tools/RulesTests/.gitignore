@@ -1,0 +1,3 @@
+# Build output of the headless rules-test runner (dotnet test Tools/RulesTests).
+bin/
+obj/
