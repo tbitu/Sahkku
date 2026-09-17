@@ -6,6 +6,7 @@ using UnityEngine.InputSystem.EnhancedTouch;
 using UnityEngine.Localization.Settings;
 using UnityEngine.SceneManagement;
 using static GameLogic;
+using Sahkku.Rules;
 
 public class GameInteraction : MonoBehaviour
 {
@@ -146,25 +147,25 @@ public class GameInteraction : MonoBehaviour
         {
             switch (GameLogic.Instance.turnPhase)
             {
-                case GameLogic.TurnPhase.P1roll:
+                case TurnPhase.P1roll:
                     gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Roll");
                     break;
 
-                case GameLogic.TurnPhase.P1move:
+                case TurnPhase.P1move:
                     gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Move");
                     break;
 
-                case GameLogic.TurnPhase.P2roll:
+                case TurnPhase.P2roll:
                     gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Roll");
                     break;
 
-                case GameLogic.TurnPhase.P2move:
+                case TurnPhase.P2move:
                     gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Move");
                     break;
             }
         }
 
-        if ((GameLogic.Instance.turnPhase == GameLogic.TurnPhase.P1move || GameLogic.Instance.turnPhase == GameLogic.TurnPhase.P2move) && !GameLogic.Instance.gameOver)
+        if ((GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move) && !GameLogic.Instance.gameOver)
         {
             dieHighlight1.SetActive(GameLogic.Instance.currentActiveDie == 0);
             dieHighlight2.SetActive(GameLogic.Instance.currentActiveDie == 1);
@@ -178,9 +179,9 @@ public class GameInteraction : MonoBehaviour
         }
 
         rollDiceButton.SetActive(false);
-        if (GameLogic.Instance.turnPhase == GameLogic.TurnPhase.P1roll || GameLogic.Instance.turnPhase == GameLogic.TurnPhase.P2roll || GameLogic.Instance.CanReroll())
+        if (GameLogic.Instance.turnPhase == TurnPhase.P1roll || GameLogic.Instance.turnPhase == TurnPhase.P2roll || GameLogic.Instance.CanReroll())
         {
-            if (!(GameSettings.singlePlayer && GameLogic.Instance.GetCurrentPlayer() == GameLogic.PieceOwner.P2))
+            if (!(GameSettings.singlePlayer && GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P2))
             {
                 if (!GameLogic.Instance.gameOver)
                 {
@@ -213,7 +214,7 @@ public class GameInteraction : MonoBehaviour
         if (ìnteractionThisFrame && (GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move))
         {
             Ray ray = camera.ScreenPointToRay(interactionPosition);
-            if(Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == GameLogic.PieceOwner.P1 ? p1mask : p2mask))
+            if(Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P1 ? p1mask : p2mask))
             {
                 Debug.Log("Press: " + hit.transform.name, hit.transform.gameObject);
 
@@ -257,12 +258,12 @@ public class GameInteraction : MonoBehaviour
         int p1soldierIndex = 0;
         int p2soldierIndex = 0;
 
-        foreach (GameLogic.Place place in GameLogic.Instance.places)
+        foreach (Place place in GameLogic.Instance.places)
         {
             int pieceCountInPlace = place.pieces.Count;
             float centerOffset = (pieceCountInPlace - 1) * 0.5f;
             int currentPiece = 0;
-            foreach (GameLogic.Piece piece in place.pieces)
+            foreach (Piece piece in place.pieces)
             {
                 Vector3 offset = Vector3.back * (currentPiece - centerOffset);
 
@@ -274,9 +275,9 @@ public class GameInteraction : MonoBehaviour
                     }
                 }
 
-                if (piece.type == GameLogic.PieceType.Soldier)
+                if (piece.type == PieceType.Soldier)
                 {
-                    if (piece.owner == GameLogic.PieceOwner.P1)
+                    if (piece.owner == PieceOwner.P1)
                     {
                         p1Soldiers[p1soldierIndex].transform.GetComponent<MeshRenderer>().material = piece.IsSelectable() ? p1SoldierSelectablePieceMaterial[p1MaterialIndex] : p1SoldierPieceMaterial[p1MaterialIndex];
                         p1Soldiers[p1soldierIndex].transform.position = GetScaledBoardPosition(place.x, place.y) + offset;
@@ -295,9 +296,9 @@ public class GameInteraction : MonoBehaviour
                         p2soldierIndex++;
                     }
                 }
-                else if (piece.type == GameLogic.PieceType.Queen)
+                else if (piece.type == PieceType.Queen)
                 {
-                    if (piece.owner == GameLogic.PieceOwner.P1)
+                    if (piece.owner == PieceOwner.P1)
                     {
                         p1queen.transform.GetComponent<MeshRenderer>().material = piece.IsSelectable() ? p1QueenSelectablePieceMaterial[p1MaterialIndex] : p1QueenPieceMaterial[p1MaterialIndex];
                         p1queen.transform.position = GetScaledBoardPosition(place.x, place.y) + offset;
@@ -314,14 +315,14 @@ public class GameInteraction : MonoBehaviour
                         p2queen.SetActive(true);
                     }
                 }
-                else if (piece.type == GameLogic.PieceType.King)
+                else if (piece.type == PieceType.King)
                 {
                     king.transform.GetComponent<MeshRenderer>().material = piece.IsSelectable() ? kingSelectablePieceMaterial[kingMaterialIndex] : kingPieceMaterial[kingMaterialIndex];
                     king.transform.position = GetScaledBoardPosition(place.x, place.y) + offset;
                     king.name = piece.placeIndex.ToString();
                     king.GetComponent<PieceData>().pieceInfo = piece;
                     king.SetActive(true);
-                    king.layer = LayerMask.NameToLayer(piece.owner == GameLogic.PieceOwner.P1 ? "P1" : "P2");
+                    king.layer = LayerMask.NameToLayer(piece.owner == PieceOwner.P1 ? "P1" : "P2");
                 }
                 currentPiece++;
             }
@@ -376,15 +377,15 @@ public class GameInteraction : MonoBehaviour
     {
         for(int i = 0; i < GameLogic.Instance.dice.Count; ++i)
         {
-            if(GameLogic.Instance.dice[i] == GameLogic.D4.Zero)
+            if(GameLogic.Instance.dice[i] == DieFace.Zero)
             {
                 dice[i].transform.localEulerAngles = new Vector3(0.0f, 0.0f, 180.0f);
             }
-            else if (GameLogic.Instance.dice[i] == GameLogic.D4.Two)
+            else if (GameLogic.Instance.dice[i] == DieFace.Two)
             {
                 dice[i].transform.localEulerAngles = new Vector3(0.0f, 0.0f, 90.0f);
             }
-            else if (GameLogic.Instance.dice[i] == GameLogic.D4.Three)
+            else if (GameLogic.Instance.dice[i] == DieFace.Three)
             {
                 dice[i].transform.localEulerAngles = new Vector3(0.0f, 0.0f, 270.0f);
             }

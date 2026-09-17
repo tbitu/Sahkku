@@ -1,0 +1,108 @@
+{
+  "id": "sahkku.lagesvuotna.standard",
+  "version": 1,
+
+  "board": {
+    "width": 15,
+    "height": 3,
+    "layout": "rowMajorSnake"
+  },
+
+  "pieces": {
+    "soldier": {
+      "moves": ["forward"],
+      "movesScaleWithDie": true,
+      "startActivatable": false,
+      "blocksOwnLanding": false,
+      "cannotLandOnOwnUnits": false,
+      "capturable": true,
+      "recruitedWhenLanded": false,
+      "landingEndsGame": false,
+      "recruitedOnEnemyTerritory": false
+    },
+    "queen": {
+      "moves": ["forward", "backward", "vertical"],
+      "movesScaleWithDie": true,
+      "startActivatable": true,
+      "blocksOwnLanding": true,
+      "cannotLandOnOwnUnits": true,
+      "capturable": true,
+      "recruitedWhenLanded": false,
+      "landingEndsGame": true,
+      "recruitedOnEnemyTerritory": false
+    },
+    "king": {
+      "moves": ["forward", "backward", "vertical"],
+      "movesScaleWithDie": true,
+      "startActivatable": false,
+      "blocksOwnLanding": true,
+      "cannotLandOnOwnUnits": true,
+      "capturable": false,
+      "recruitedWhenLanded": true,
+      "landingEndsGame": false,
+      "recruitedOnEnemyTerritory": true
+    }
+  },
+
+  "dice": {
+    "count": 3,
+    "order": "ascendingFaceId",
+    "activateFace": "sahhku",
+    "rerollFace": "sahhku",
+    "rerollRequiresFirstDie": true,
+    "faces": [
+      { "id": "sahhku", "steps": 1 },
+      { "id": "three",  "steps": 3 },
+      { "id": "two",    "steps": 2 },
+      { "id": "zero",   "steps": 0 }
+    ]
+  },
+
+  "activation": {
+    "onMoveInactiveSoldier": {
+      "relativeTo": "source",
+      "offset": -1,
+      "perPlayerSign": true
+    }
+  },
+
+  "setup": {
+    "soldiers": {
+      "P1": { "row": 0, "placement": "all" },
+      "P2": { "row": 2, "placement": "all" }
+    },
+    "queens": {
+      "P1": { "row": 1, "x": 11 },
+      "P2": { "row": 1, "x": 3 }
+    },
+    "king": { "owner": "neutral", "row": 1, "x": 7 }
+  },
+
+  "variants": {
+    "standard": {
+      "active": [],
+      "activatable": [
+        { "x": 14, "y": 0 },
+        { "x": 0,  "y": 2 }
+      ]
+    },
+    "evenOdds": {
+      "active": [
+        { "x": 14, "y": 0 },
+        { "x": 0,  "y": 2 },
+        { "x": 13, "y": 0 },
+        { "x": 1,  "y": 2 },
+        { "x": 12, "y": 0 },
+        { "x": 2,  "y": 2 }
+      ],
+      "activatable": [
+        { "x": 11, "y": 0 },
+        { "x": 3,  "y": 2 }
+      ]
+    }
+  },
+
+  "win": {
+    "soldierCapturesToWin": 15
+  }
+}

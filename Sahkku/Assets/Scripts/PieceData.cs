@@ -1,6 +1,7 @@
 using UnityEngine;
+using Sahkku.Rules;
 
 public class PieceData : MonoBehaviour
 {
-    public GameLogic.Piece pieceInfo;
+    public Piece pieceInfo;
 }
