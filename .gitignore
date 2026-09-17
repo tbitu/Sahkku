@@ -1,0 +1,19 @@
+# Repository-level ignores.
+#
+# The Unity project keeps its own rules in Sahkku/.gitignore (the stock Unity template),
+# which covers Library/, Temp/, Logs/, UserSettings/ and the generated *.csproj / *.sln
+# files inside Sahkku/. Only things that live outside that project belong here.
+
+# Agent / tool session state.
+.reasonix/
+
+# Build output of the .NET tooling, i.e. the headless rules tests in Tools/RulesTests
+# (`dotnet test Tools/RulesTests`).
+Tools/**/bin/
+Tools/**/obj/
+
+# Editor and OS cruft.
+.DS_Store
+Thumbs.db
+*.swp
+*~
