@@ -13,8 +13,8 @@ bootstrap = "dotnet restore Tools/RulesTests/RulesTests.csproj"
 [defaults.agents]
 reviewer = "opencode"
 reviewer_model = "lmstudio/pairflow-reviewer"
-implementer = "opencode"
-implementer_model = "lmstudio/pairflow-implementer"
+implementer = "reasonix"
+#implementer_model = "lmstudio/pairflow-implementer"
 meta_reviewer = "opencode"
 meta_reviewer_model = "lmstudio/pairflow-meta-reviewer"
 
