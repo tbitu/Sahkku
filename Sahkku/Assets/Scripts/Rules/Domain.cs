@@ -38,6 +38,17 @@ namespace Sahkku.Rules
         P2move = 3
     }
 
+    /// <summary>
+    /// The player's explicit choice when re-rolling is on offer (see
+    /// <c>RulesEngine.ApplyRerollDecision</c>). Re-rolling a sáhkku die is strictly optional: the
+    /// engine must support both choices and never decides for the player.
+    /// </summary>
+    public enum RerollDecision
+    {
+        KeepDiceAndProceed = 0,
+        RerollActiveDie = 1
+    }
+
     /// <summary>Why the game ended. Lets a host pick the right message without re-deriving rules.</summary>
     public enum WinReason
     {
@@ -119,6 +130,14 @@ namespace Sahkku.Rules
         public List<DieFace> dice = new List<DieFace>();
         public TurnPhase turnPhase;
         public int currentActiveDie;
+
+        /// <summary>
+        /// True once the current player has explicitly chosen to keep the dice of this throw (see
+        /// <c>RulesEngine.ApplyRerollDecision</c>). While set, re-rolling is no longer offered for
+        /// this throw, even though a sáhkku face may still be up. Reset by every new roll and turn hand-over.
+        /// </summary>
+        public bool rerollDecisionMade;
+
         public bool gameOver;
         public PieceOwner winner = PieceOwner.None;
         public WinReason winReason = WinReason.None;
@@ -144,6 +163,7 @@ namespace Sahkku.Rules
             {
                 turnPhase = turnPhase,
                 currentActiveDie = currentActiveDie,
+                rerollDecisionMade = rerollDecisionMade,
                 gameOver = gameOver,
                 winner = winner,
                 winReason = winReason,
@@ -225,16 +245,46 @@ namespace Sahkku.Rules
         bool TryChooseAction(GameState state, IReadOnlyList<Move> legalMoves, out Move move);
     }
 
+    /// <summary>
+    /// Asynchronous agent interface implemented by Human, Heuristic, and LLM controllers.
+    /// Pure C# interface living in Sahkku.Rules so headless tools can instantiate agents.
+    /// </summary>
+    public interface IPlayerAgent
+    {
+        PieceOwner Owner { get; }
+        string Name { get; }
+
+        System.Threading.Tasks.Task<RerollDecision> DecideRerollAsync(
+            GameState state,
+            System.Threading.CancellationToken cancellationToken);
+
+        System.Threading.Tasks.Task<Move> DecideMoveAsync(
+            GameState state,
+            IReadOnlyList<Move> legalMoves,
+            System.Threading.CancellationToken cancellationToken);
+    }
+
     /// <summary>Options supplied by the host (menu/settings) when starting a game.</summary>
     public struct EngineOptions
     {
         public PieceOwner startingPlayer;
         public bool evenOdds;
 
+        /// <summary>
+        /// When true, <c>RulesEngine.InitGame(options, random)</c> selects the starting player by
+        /// throwing for it (see <c>RulesEngine.ThrowForStartingPlayer</c>) instead of using
+        /// <see cref="startingPlayer"/>. A random source is then required.
+        /// </summary>
+        public bool throwForStartingPlayer;
+
         public EngineOptions(PieceOwner startingPlayer, bool evenOdds)
+            : this(startingPlayer, evenOdds, false) { }
+
+        public EngineOptions(PieceOwner startingPlayer, bool evenOdds, bool throwForStartingPlayer)
         {
             this.startingPlayer = startingPlayer;
             this.evenOdds = evenOdds;
+            this.throwForStartingPlayer = throwForStartingPlayer;
         }
     }
 }

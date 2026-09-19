@@ -53,6 +53,19 @@ namespace Sahkku.Rules
         /// <summary>Creates a fresh game using the setup declared in the ruleset.</summary>
         public GameState InitGame(EngineOptions options)
         {
+            return InitGame(options, null);
+        }
+
+        /// <summary>
+        /// Creates a fresh game. When <see cref="EngineOptions.throwForStartingPlayer"/> is set, the
+        /// starting player comes from <see cref="ThrowForStartingPlayer(IRandomSource)"/> — which then
+        /// requires <paramref name="random"/> — instead of <see cref="EngineOptions.startingPlayer"/>.
+        /// </summary>
+        public GameState InitGame(EngineOptions options, IRandomSource random)
+        {
+            if (options.throwForStartingPlayer && random == null)
+                throw new RuleSetException("InitGame with 'throwForStartingPlayer' requires a random source.");
+
             var state = new GameState();
             BuildPlaces(state);
 
@@ -87,7 +100,9 @@ namespace Sahkku.Rules
 
             for (int i = 0; i < rules.dice.count; ++i) state.dice.Add(DieFace.Zero);
 
-            state.turnPhase = options.startingPlayer == PieceOwner.P1 ? TurnPhase.P1roll : TurnPhase.P2roll;
+            PieceOwner starter = options.startingPlayer;
+            if (options.throwForStartingPlayer) starter = ThrowForStartingPlayer(random);
+            state.turnPhase = starter == PieceOwner.P1 ? TurnPhase.P1roll : TurnPhase.P2roll;
             return state;
         }
 
@@ -151,18 +166,32 @@ namespace Sahkku.Rules
         }
 
         /// <summary>
-        /// Rolls the dice, puts them into the ruleset's spending order and opens the move phase.
-        /// Hands the turn straight over when the first die cannot be used, because the ruleset forbids
-        /// skipping a die value.
+        /// Rolls the dice and puts them into the ruleset's spending order, then opens the decision
+        /// point: while no die has been spent yet, re-rolling may still be offered (see
+        /// <see cref="CanReroll"/>). Unlike <see cref="RollAndBeginTurn"/>, this neither evaluates
+        /// moves nor hands the turn over — that is what
+        /// <see cref="ApplyRerollDecision(GameState, IRandomSource, RerollDecision)"/> does.
         /// </summary>
-        public void RollAndBeginTurn(GameState state, IRandomSource random)
+        public void RollDice(GameState state, IRandomSource random)
         {
             if (state.gameOver) throw new IllegalMoveException("The game is over.");
             if (!state.IsRollPhase) throw new IllegalMoveException("It is not a roll phase.");
             RollAllDice(state, random);
             OrderDice(state);
             state.currentActiveDie = 0;
+            state.rerollDecisionMade = false;
             state.turnPhase = (TurnPhase)((int)state.turnPhase + 1);
+        }
+
+        /// <summary>
+        /// Rolls the dice and begins the turn in one step: rolls, orders by spending value, opens the
+        /// move phase and hands the turn straight over when no die can be used at all, because the
+        /// ruleset forbids skipping a die value. Hosts that want to offer an explicit re-roll
+        /// decision use <see cref="RollDice"/> followed by <see cref="ApplyRerollDecision(GameState, IRandomSource, RerollDecision)"/> instead.
+        /// </summary>
+        public void RollAndBeginTurn(GameState state, IRandomSource random)
+        {
+            RollDice(state, random);
             if (!EvaluateAllowedPlaces(state)) NextPlayerTurn(state);
         }
 
@@ -176,18 +205,55 @@ namespace Sahkku.Rules
         }
 
         /// <summary>
-        /// Throws the die currently up for spending again. Only legal while the ruleset allows
-        /// re-rolling (here: while a sáhkku face is up and no die has been spent yet).
+        /// Throws the die currently up for spending again, exactly as
+        /// <see cref="ApplyRerollDecision(GameState, IRandomSource, RerollDecision)"/> with
+        /// <see cref="RerollDecision.RerollActiveDie"/> does — the re-thrown die is ordered back into the
+        /// ruleset's spending order, so the next sáhkku (if any) becomes the die up for spending. Only
+        /// legal while the ruleset allows re-rolling (here: while a sáhkku face is up and no die has been
+        /// spent yet). This is the legacy one-step shorthand; hosts that ask the player first should call
+        /// <see cref="ApplyRerollDecision(GameState, IRandomSource, RerollDecision)"/> instead.
         /// </summary>
         public void RerollFirstDie(GameState state, IRandomSource random)
         {
-            if (!CanReroll(state)) throw new IllegalMoveException("Re-rolling is not allowed right now.");
-            state.dice[state.currentActiveDie] = FaceFromIndex(random.NextDieFaceIndex());
+            ApplyRerollDecision(state, random, RerollDecision.RerollActiveDie);
+        }
+
+        /// <summary>
+        /// Applies the player's explicit decision about the re-roll that is on offer: keep the dice
+        /// and spend them, or throw the active die again. The engine never chooses for the player —
+        /// a host (hotseat dialog, heuristic or LLM agent) must call this with the chosen
+        /// <see cref="RerollDecision"/>; keeping is always legal, re-rolling only while
+        /// <see cref="CanReroll"/> holds.
+        /// </summary>
+        public void ApplyRerollDecision(GameState state, IRandomSource random, RerollDecision decision)
+        {
+            // A re-roll needs a die roll; validate the argument before touching the state, the way
+            // InitGame validates the source it needs for the starting throw. Keeping the dice needs no
+            // random source at all, so a host may pass null for KeepDiceAndProceed.
+            if (decision == RerollDecision.RerollActiveDie && random == null)
+                throw new RuleSetException("ApplyRerollDecision with 'RerollActiveDie' requires a random source.");
+
+            if (state.gameOver || state.IsRollPhase)
+                throw new IllegalMoveException("There is no thrown die to decide about.");
+
+            if (decision == RerollDecision.RerollActiveDie)
+            {
+                if (!CanReroll(state)) throw new IllegalMoveException("Re-rolling is not allowed right now.");
+                state.dice[state.currentActiveDie] = FaceFromIndex(random.NextDieFaceIndex());
+                OrderDice(state);
+                return;
+            }
+
+            // KeepDiceAndProceed: the dice are kept exactly as thrown. Re-rolling is closed for this
+            // throw and the turn moves straight into move evaluation, handing over when nothing can be used.
+            state.rerollDecisionMade = true;
+            if (!EvaluateAllowedPlaces(state)) NextPlayerTurn(state);
         }
 
         public bool CanReroll(GameState state)
         {
             if (state.gameOver || state.IsRollPhase) return false;
+            if (state.rerollDecisionMade) return false; // the player already chose to keep these dice
             if (rules.dice.reroll.beforeUsingAnyDie && state.currentActiveDie != 0) return false;
             return CanRerollFace(CurrentFace(state));
         }
@@ -499,6 +565,7 @@ namespace Sahkku.Rules
         {
             ClearAllowedPlaces(state);
             state.currentActiveDie = 0;
+            state.rerollDecisionMade = false; // a fresh throw may offer the re-roll decision again
             state.turnPhase = state.CurrentPlayer == PieceOwner.P2 ? TurnPhase.P1roll : TurnPhase.P2roll;
         }
 
