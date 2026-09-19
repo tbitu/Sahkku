@@ -183,11 +183,7 @@ public class MenuManager : MonoBehaviour
     /// </summary>
     static void CopyLabel(Toggle source, Transform panel, string localizationKey, string labelName, float rowY)
     {
-        Transform controlColumn = source.transform.parent;
-        Transform labelColumn = controlColumn == null ? null : controlColumn.parent;
-        if (labelColumn == null) return;
-
-        Transform template = labelColumn.Find("Odds_Text (TMP)");
+        Transform template = FindLabelTemplate(source);
         if (template == null)
         {
             Debug.LogWarning("The even-odds label could not be found; the new option has no label.", source);
@@ -211,6 +207,28 @@ public class MenuManager : MonoBehaviour
             text.text = UnityEngine.Localization.Settings.LocalizationSettings.StringDatabase
                 .GetLocalizedString("UI_Text", localizationKey);
         }
+    }
+
+    /// <summary>
+    /// Finds the even-odds label to clone. The options table keeps each control in a column and its label in
+    /// a sibling column, so the template is a direct child of one of the control column's siblings.
+    /// <see cref="Transform.Find"/> only matches direct children (it never descends), so the table itself
+    /// cannot be searched for the label by name - the sibling columns have to be walked instead.
+    /// </summary>
+    static Transform FindLabelTemplate(Toggle source)
+    {
+        const string TemplateName = "Odds_Text (TMP)";
+
+        Transform controlColumn = source.transform.parent;
+        Transform table = controlColumn == null ? null : controlColumn.parent;
+        if (table == null) return null;
+
+        for (int i = 0; i < table.childCount; i++)
+        {
+            Transform template = table.GetChild(i).Find(TemplateName);
+            if (template != null) return template;
+        }
+        return null;
     }
 
     public void QuitGame()
