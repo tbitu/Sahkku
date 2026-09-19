@@ -201,6 +201,166 @@ namespace Sahkku.Rules.Tests
             var random = new SequenceRandomSource(3, 3, 3, 0, 1, 1, 2);
             Assert.AreEqual(PieceOwner.P2, engine.ThrowForStartingPlayer(random));
         }
+
+        [Test]
+        public void InitGame_WithThrowForStartingPlayer_SetsValidPlayer()
+        {
+            RulesEngine engine = Engine();
+
+            // P1 throws blank-blank-blank (face index 3), P2 throws a sáhkku on the first die.
+            var random = new SequenceRandomSource(3, 3, 3, 0);
+            GameState state = engine.InitGame(new EngineOptions(PieceOwner.P1, false, true), random);
+
+            Assert.AreEqual(TurnPhase.P2roll, state.turnPhase);
+            Assert.AreEqual(PieceOwner.P2, state.CurrentPlayer);
+            // The rest of the setup is untouched by the throw.
+            Assert.AreEqual(45, state.places.Count);
+            Assert.IsEmpty(engine.ValidateState(state), "the initial position must satisfy the invariants");
+        }
+
+        [Test]
+        public void InitGame_WithoutThrowForStartingPlayer_IgnoresTheRandomSource()
+        {
+            RulesEngine engine = Engine();
+            GameState state = engine.InitGame(new EngineOptions(PieceOwner.P2, false), new SequenceRandomSource(0));
+
+            Assert.AreEqual(TurnPhase.P2roll, state.turnPhase);
+            Assert.AreEqual(PieceOwner.P2, state.CurrentPlayer);
+        }
+
+        [Test]
+        public void InitGame_WithThrowForStartingPlayer_RequiresARandomSource()
+        {
+            RulesEngine engine = Engine();
+            Assert.Throws<RuleSetException>(() => engine.InitGame(new EngineOptions(PieceOwner.P1, false, true), null));
+        }
+    }
+
+    [TestFixture]
+    public class RerollDecisionTests
+    {
+        static RulesEngine Engine() { return new RulesEngine(TestRuleset.Load()); }
+
+        [Test]
+        public void RollDice_OrdersTheDiceAndOpensTheDecisionPoint()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine); // P1 roll phase, dice are Zero placeholders
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+
+            engine.RollDice(board.State, new SequenceRandomSource(0, 2, 3));
+
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Two, DieFace.Zero }, board.State.dice);
+            Assert.AreEqual(TurnPhase.P1move, board.State.turnPhase);
+            Assert.AreEqual(0, board.State.currentActiveDie);
+            Assert.IsTrue(engine.CanReroll(board.State), "a sáhkku may be re-rolled before any die is spent");
+        }
+
+        [Test]
+        public void RerollDecision_KeepDice_ProceedsToMoveWithoutRerolling()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+
+            // All three dice come up sáhkku.
+            engine.RollDice(board.State, new SequenceRandomSource(0));
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Sahhku, DieFace.Sahhku }, board.State.dice);
+            Assert.IsTrue(engine.CanReroll(board.State), "the sáhkku may still be re-rolled before any die is spent");
+
+            engine.ApplyRerollDecision(board.State, new SequenceRandomSource(0), RerollDecision.KeepDiceAndProceed);
+
+            // The dice are kept exactly as thrown and the turn moves into move evaluation.
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Sahhku, DieFace.Sahhku }, board.State.dice);
+            Assert.AreEqual(TurnPhase.P1move, board.State.turnPhase);
+            Assert.AreEqual(0, board.State.currentActiveDie);
+            Assert.IsFalse(engine.CanReroll(board.State), "keeping the dice closes re-rolling for this throw");
+
+            // Moves are enabled: the loose soldier may spend the X on a one-step move.
+            CollectionAssert.AreEqual(new[] { 6 }, engine.GetAllowedPlaces(board.State, board.State.places[5].pieces[0]));
+            List<Move> moves = engine.LegalMoves(board.State);
+            Assert.AreEqual(1, moves.Count);
+            Assert.AreEqual(6, moves[0].targetPlaceIndex);
+        }
+
+        [Test]
+        public void RerollDecision_Reroll_ReplacesDieAndReorders()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+
+            // Throw X II - (face indices 0, 2, 3), which orders to [X, II, -].
+            engine.RollDice(board.State, new SequenceRandomSource(0, 2, 3));
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Two, DieFace.Zero }, board.State.dice);
+
+            // Re-roll the active die; it comes up III (face index 1).
+            engine.ApplyRerollDecision(board.State, new SequenceRandomSource(1), RerollDecision.RerollActiveDie);
+
+            CollectionAssert.AreEqual(new[] { DieFace.Three, DieFace.Two, DieFace.Zero }, board.State.dice);
+            Assert.AreEqual(TurnPhase.P1move, board.State.turnPhase);
+            Assert.AreEqual(0, board.State.currentActiveDie);
+            Assert.IsFalse(engine.CanReroll(board.State), "the re-rolled face is not a sáhkku");
+
+            // The die count and spending order are intact: re-ordering changes nothing.
+            GameState reordered = board.State.Clone();
+            engine.OrderDice(reordered);
+            CollectionAssert.AreEqual(board.State.dice, reordered.dice, "the dice must already be in spending order");
+
+            // And the soldier may now spend III.
+            CollectionAssert.AreEqual(new[] { 8 }, engine.GetAllowedPlaces(board.State, board.State.places[5].pieces[0]));
+        }
+
+        [Test]
+        public void RerollDecision_AfterDieSpent_RefusesReroll()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.Phase(TurnPhase.P1move);
+            board.SetDice(DieFace.Sahhku, DieFace.Sahhku, DieFace.Sahhku);
+
+            // The first die has been spent; the ruleset forbids re-rolling after that.
+            board.ActiveDie(1);
+
+            Assert.Throws<IllegalMoveException>(
+                () => engine.ApplyRerollDecision(board.State, new SequenceRandomSource(0), RerollDecision.RerollActiveDie));
+        }
+
+        [Test]
+        public void RerollDecision_KeepIsAlwaysLegalEvenWithoutARerollableFace()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+
+            // No sáhkku at all: there is nothing to re-roll, but keeping must still proceed.
+            engine.RollDice(board.State, new SequenceRandomSource(2));
+            CollectionAssert.AreEqual(new[] { DieFace.Two, DieFace.Two, DieFace.Two }, board.State.dice);
+            Assert.IsFalse(engine.CanReroll(board.State));
+
+            engine.ApplyRerollDecision(board.State, null, RerollDecision.KeepDiceAndProceed);
+
+            Assert.AreEqual(TurnPhase.P1move, board.State.turnPhase);
+            CollectionAssert.AreEqual(new[] { 7 }, engine.GetAllowedPlaces(board.State, board.State.places[5].pieces[0]));
+        }
+
+        [Test]
+        public void RerollDecision_RerollWithoutARandomSource_Throws()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.SetDice(DieFace.Sahhku, DieFace.Sahhku, DieFace.Three);
+            board.Phase(TurnPhase.P1move);
+
+            // A missing die source is an argument/setup fault, not a null dereference, and the state is
+            // left untouched for a caller that can recover.
+            Assert.Throws<RuleSetException>(
+                () => engine.ApplyRerollDecision(board.State, null, RerollDecision.RerollActiveDie));
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Sahhku, DieFace.Three }, board.State.dice);
+            Assert.AreEqual(TurnPhase.P1move, board.State.turnPhase);
+        }
     }
 
     [TestFixture]
@@ -934,7 +1094,7 @@ namespace Sahkku.Rules.Tests
         }
 
         [Test]
-        public void RerollFirstDie_ReplacesOnlyTheFirstDie()
+        public void RerollFirstDie_ReplacesTheActiveDieAndReorders()
         {
             RulesEngine engine = Engine();
             var board = new Board(engine);
@@ -944,7 +1104,32 @@ namespace Sahkku.Rules.Tests
 
             engine.RerollFirstDie(board.State, new SequenceRandomSource(2));
 
-            CollectionAssert.AreEqual(new[] { DieFace.Two, DieFace.Three, DieFace.Two }, board.State.dice);
+            // Exactly one die changed (the sáhkku became a two) and the throw is back in spending order,
+            // so no die is ever left stranded behind a later-spending face.
+            CollectionAssert.AreEqual(new[] { DieFace.Three, DieFace.Two, DieFace.Two }, board.State.dice);
+            int twos = 0;
+            foreach (DieFace face in board.State.dice)
+            {
+                if (face == DieFace.Two) twos++;
+            }
+            Assert.AreEqual(2, twos, "the re-thrown die replaced the sáhkku; no other die was touched");
+        }
+
+        [Test]
+        public void RerollFirstDie_LeavesTheNextSahhkuUpAndRerollable()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.Phase(TurnPhase.P1move);
+            board.SetDice(DieFace.Sahhku, DieFace.Sahhku, DieFace.Three);
+
+            // The first X comes up blank and is ordered to the back; the second X takes its place.
+            engine.RerollFirstDie(board.State, new SequenceRandomSource(3));
+
+            CollectionAssert.AreEqual(new[] { DieFace.Sahhku, DieFace.Three, DieFace.Zero }, board.State.dice);
+            Assert.AreEqual(0, board.State.currentActiveDie);
+            Assert.IsTrue(engine.CanReroll(board.State), "the player presses once per sáhkku die");
         }
 
         [Test]
@@ -1251,6 +1436,116 @@ namespace Sahkku.Rules.Tests
             }
 
             Assert.IsTrue(state.gameOver, "the game should have been decided");
+        }
+    }
+
+    [TestFixture]
+    public class FormatterTests
+    {
+        static RulesEngine Engine() { return new RulesEngine(TestRuleset.Load()); }
+
+        /// <summary>The cell tokens of one rendered board line, in x order (left to right).</summary>
+        static string[] Cells(string line)
+        {
+            int start = line.IndexOf('|');
+            Assert.GreaterOrEqual(start, 0, "line must carry a row label: '" + line + "'");
+            return line.Substring(start + 1).Trim().Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        [Test]
+        public void GameStateFormatter_FormatBoardAscii_RendersValidGrid()
+        {
+            RulesEngine engine = Engine();
+            GameState state = engine.InitGame(new EngineOptions(PieceOwner.P1, false));
+
+            string[] lines = GameStateFormatter.FormatBoardAscii(state).Split('\n');
+            Assert.AreEqual(3, lines.Length, "a 3x15 board renders as three grid lines");
+            Assert.IsTrue(lines[0].StartsWith("y=2"), "top line is the highest row (player two home)");
+            Assert.IsTrue(lines[1].StartsWith("y=1"));
+            Assert.IsTrue(lines[2].StartsWith("y=0"), "bottom line is player one's home row");
+
+            string[] top = Cells(lines[0]);
+            string[] middle = Cells(lines[1]);
+            string[] bottom = Cells(lines[2]);
+
+            Assert.AreEqual(15, top.Length);
+            Assert.AreEqual(15, middle.Length);
+            Assert.AreEqual(15, bottom.Length);
+
+            for (int x = 0; x < 15; ++x)
+            {
+                Assert.AreEqual("S2", top[x], "top cell " + x);
+                Assert.AreEqual("S1", bottom[x], "bottom cell " + x);
+            }
+
+            // Middle row: queen P2 at x=3, the neutral king (the Castle) at x=7, queen P1 at x=11.
+            for (int x = 0; x < 15; ++x)
+            {
+                string expected = x == 3 ? "Q2" : (x == 7 ? "K0" : (x == 11 ? "Q1" : "."));
+                Assert.AreEqual(expected, middle[x], "middle cell " + x);
+            }
+
+            // A stack of two soldiers on one line is shown with a count.
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+
+            string[] stackedBottom = Cells(GameStateFormatter.FormatBoardAscii(board.State).Split('\n')[2]);
+            Assert.AreEqual("S1(x2)", stackedBottom[5]);
+            for (int x = 0; x < 15; ++x)
+            {
+                if (x != 5) Assert.AreEqual(".", stackedBottom[x], "stacked bottom cell " + x);
+            }
+
+            // Formatting is a pure function of the state: same state, same string.
+            Assert.AreEqual(GameStateFormatter.FormatBoardAscii(state), GameStateFormatter.FormatBoardAscii(state));
+        }
+
+        [Test]
+        public void GameStateFormatter_FormatPromptContext_ContainsAllLegalMoves()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.Add(7, PieceType.Soldier, PieceOwner.P1, active: true);
+            board.Phase(TurnPhase.P1move);
+            board.SetDice(DieFace.Sahhku);
+
+            List<Move> legal = engine.LegalMoves(board.State);
+            Assert.AreEqual(2, legal.Count);
+
+            string prompt = GameStateFormatter.FormatPromptContext(board.State, legal);
+
+            for (int i = 0; i < legal.Count; ++i)
+            {
+                Assert.IsTrue(prompt.Contains("[" + i + "]"), "missing move index " + i + " in:\n" + prompt);
+            }
+
+            // The context carries the turn and phase, the dice hand and the capture score.
+            Assert.IsTrue(prompt.Contains("P1"));
+            Assert.IsTrue(prompt.Contains("move"));
+            Assert.IsTrue(prompt.Contains("X"), "the sáhkku die face must be shown");
+            Assert.IsTrue(prompt.Contains("P1: 0") && prompt.Contains("P2: 0"));
+
+            // And the pieces under control, with coordinates and activation status.
+            Assert.IsTrue(prompt.Contains("Soldier #1000 at (x=5, y=0)"), "controlled piece listing:\n" + prompt);
+            Assert.IsTrue(prompt.Contains(": active"));
+        }
+
+        [Test]
+        public void GameStateFormatter_FormatPromptContext_ReportsNoMovesWhenThereAreNone()
+        {
+            RulesEngine engine = Engine();
+            var board = new Board(engine);
+            // Only a locked soldier: no die value produces a legal move.
+            board.Add(5, PieceType.Soldier, PieceOwner.P1, active: false, activatable: false);
+            board.Phase(TurnPhase.P1move);
+            board.SetDice(DieFace.Sahhku);
+
+            string prompt = GameStateFormatter.FormatPromptContext(board.State, engine.LegalMoves(board.State));
+
+            Assert.IsTrue(prompt.Contains("(no legal moves)"));
+            Assert.IsFalse(prompt.Contains("[0]"));
         }
     }
 }

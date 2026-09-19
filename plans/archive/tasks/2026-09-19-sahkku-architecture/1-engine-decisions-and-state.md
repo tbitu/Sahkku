@@ -5,7 +5,7 @@ task_family_id: engine-decisions-and-state
 sequence_key: "1"
 task_id: 1-engine-decisions-and-state
 title: "Rules Engine Decision Expansion, Starting Throw Integration, and State Serialization"
-status: draft
+status: archived
 phase: phase1
 target_files:
   - "Sahkku/Assets/Scripts/Rules/Domain.cs"
