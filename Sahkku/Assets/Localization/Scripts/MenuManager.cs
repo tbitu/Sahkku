@@ -16,9 +16,20 @@ public class MenuManager : MonoBehaviour
     [SerializeField]
     private Toggle oddToggle;
 
+    // Grown from the "even odds" row at start-up: the scene has no widget for it. A thrown start decides
+    // the starting player, so this toggle is greyed out while the throw is on.
+    private Toggle menStartToggle;
+
+    /// <summary>The border the options table's label and control columns share, from the panel's middle.</summary>
+    const float TableEdgeX = -60.0f;
+
+    // The options table is exactly as tall as its four rows, so its start options sit above it instead.
+    const float ThrowForStartRowY = -80.0f;
+    const float MenStartRowY = -165.0f;
+
     private void Start()
     {
-        AddThrowForStartOption();
+        AddStartOptions();
         ShowMainMenu();
     }
 
@@ -43,17 +54,26 @@ public class MenuManager : MonoBehaviour
         Debug.Log("Even odds: " + GameSettings.evenOdds);
     }
 
-    /// <summary>Chooses between "throw for the starting player" and the starting player picked here.</summary>
+    /// <summary>Chooses between "throw for the starting player" and the starting player picked below.</summary>
     public void ToggleThrowForStart(bool value)
     {
         GameSettings.throwForStartingPlayer = value;
+        // A thrown start decides the starting player, so the manual pick only means something without it.
+        if (menStartToggle != null) menStartToggle.interactable = !value;
         Debug.Log("Throw for starting player: " + GameSettings.throwForStartingPlayer);
+    }
+
+    /// <summary>True when the men (player two) start, false when the women (player one) start.</summary>
+    public void ToggleMenStart(bool value)
+    {
+        SetStartingPlayer(value ? 1 : 0);
     }
 
     /// <summary>Picks who starts when the throw is switched off.</summary>
     public void SetStartingPlayer(int value)
     {
         GameSettings.startingPlayer = value == 1 ? GameSettings.Player.Two : GameSettings.Player.One;
+        Debug.Log("Starting player: " + GameSettings.startingPlayer);
     }
 
     public void ShowMainMenu()
@@ -98,32 +118,70 @@ public class MenuManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Adds the "throw for start" row to the options screen by copying the existing "even odds" row.
-    /// Growing the option list at runtime keeps the setting next to the rules it interacts with
-    /// without every build having to keep a hand-wired scene object in sync.
+    /// Adds the two starting-player rows (whether to throw for the start, and who starts when that throw is
+    /// off) to the options screen by copying the existing "even odds" row. Growing the rows at runtime keeps
+    /// every build from having to hand-wire two more scene objects.
+    ///
+    /// They are placed in the free band above the options table rather than appended to the two table
+    /// columns: those columns are exactly as tall as their four authored rows, so a fifth row would be laid
+    /// out past the bottom of the table and onto the play/back buttons below it.
     /// </summary>
-    void AddThrowForStartOption()
+    void AddStartOptions()
     {
-        if (oddToggle == null)
+        if (oddToggle == null || gameOptionsPanel == null)
         {
-            Debug.LogWarning("MenuManager has no even-odds toggle to copy; the throw-for-start option is unavailable.", this);
+            Debug.LogWarning("MenuManager has no options row to copy; the starting-player options are unavailable.", this);
             return;
         }
 
-        Toggle toggle = Instantiate(oddToggle, oddToggle.transform.parent);
-        toggle.name = "ThrowForStart_Toggle";
-        toggle.isOn = GameSettings.throwForStartingPlayer;
-        toggle.onValueChanged = new Toggle.ToggleEvent();
-        toggle.onValueChanged.AddListener(ToggleThrowForStart);
+        AddOptionRow("ThrowForStart", "Throw_For_Start", ThrowForStartRowY, GameSettings.throwForStartingPlayer, ToggleThrowForStart);
+        menStartToggle = AddOptionRow("MenStart", "Men_Start", MenStartRowY, GameSettings.startingPlayer == GameSettings.Player.Two, ToggleMenStart);
 
-        CopyLabel(oddToggle, toggle, "Throw_For_Start");
+        // A thrown start picks the starting player itself, so the manual choice is not on offer next to it.
+        menStartToggle.interactable = !GameSettings.throwForStartingPlayer;
     }
 
     /// <summary>
-    /// Mirrors the label of a copied control. The options screen keeps its labels in a separate column
-    /// from its controls, so the label has to be copied into that column.
+    /// Copies a row of the options table: the "even odds" toggle against the setting column's edge, whose
+    /// label is against the text column's edge. The table is 692 wide with a 200-wide text column and a
+    /// 320-wide setting column, both centred in it, so the edge the two columns share is 60 left of the
+    /// panel's middle. Returns the new toggle.
     /// </summary>
-    static void CopyLabel(Toggle source, Toggle copy, string localizationKey)
+    Toggle AddOptionRow(string name, string localizationKey, float rowY, bool initialValue, UnityEngine.Events.UnityAction<bool> onChanged)
+    {
+        Toggle toggle = Instantiate(oddToggle, gameOptionsPanel.transform);
+        toggle.name = name + "_Toggle";
+        PlaceRowObject(toggle.transform, new Vector2(0.0f, 0.5f), TableEdgeX, rowY);
+        toggle.onValueChanged = new Toggle.ToggleEvent(); // drop the copied row's scene wiring ...
+        toggle.isOn = initialValue;                       // ... so setting the start state stays silent
+        toggle.onValueChanged.AddListener(onChanged);
+
+        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Text (TMP)", rowY);
+        return toggle;
+    }
+
+    /// <summary>
+    /// Puts a copied row object on the options panel: <paramref name="edgeX"/> from the panel's middle,
+    /// <paramref name="rowY"/> below its top, with the given pivot against that edge. The panel itself has no
+    /// layout group, so these rows are never re-laid out by one.
+    /// </summary>
+    static void PlaceRowObject(Transform row, Vector2 pivot, float edgeX, float rowY)
+    {
+        RectTransform rect = row as RectTransform;
+        if (rect == null) return;
+
+        rect.anchorMin = new Vector2(0.5f, 1.0f);
+        rect.anchorMax = new Vector2(0.5f, 1.0f);
+        rect.pivot = pivot;
+        rect.anchoredPosition = new Vector2(edgeX, rowY);
+    }
+
+    /// <summary>
+    /// Mirrors the label of a copied control. The options screen keeps its labels in a separate column from
+    /// its controls, so the label has to be copied out of that column; it is right-aligned against the same
+    /// edge as the column's own labels.
+    /// </summary>
+    static void CopyLabel(Toggle source, Transform panel, string localizationKey, string labelName, float rowY)
     {
         Transform controlColumn = source.transform.parent;
         Transform labelColumn = controlColumn == null ? null : controlColumn.parent;
@@ -136,8 +194,9 @@ public class MenuManager : MonoBehaviour
             return;
         }
 
-        GameObject label = Instantiate(template.gameObject, labelColumn);
-        label.name = "ThrowForStart_Text (TMP)";
+        GameObject label = Instantiate(template.gameObject, panel);
+        label.name = labelName;
+        PlaceRowObject(label.transform, new Vector2(1.0f, 0.5f), TableEdgeX, rowY);
 
         UnityEngine.Localization.Components.LocalizeStringEvent localize =
             label.GetComponent<UnityEngine.Localization.Components.LocalizeStringEvent>();

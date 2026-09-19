@@ -142,6 +142,10 @@ MonoBehaviour:
     m_Localized: 'Throw for start'
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000016384
+    m_Localized: 'Men start'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

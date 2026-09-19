@@ -123,10 +123,11 @@ each is recorded so that a later change is a decision rather than an accident.
    **Kept: the PDF rule** (first recruitment by entering the enemy home row, then by moving onto it).
 5. **Whether a move may jump over pieces.** No source states it either way for this variant, and the
    engine only ever looks at the destination line. Unchanged.
-6. **Who starts.** The rules say the players throw dice and the first to roll an X starts; the game lets
-   the player choose in the menu instead. The rule is implemented
-   (`RulesEngine.ThrowForStartingPlayer`, `start.mode`) and tested, but the menu does not call it yet —
-   the menu choice is a deliberate UX divergence.
+6. **Who starts.** The rules say the players throw dice and the first to roll an X starts; the game also
+   lets the player choose in the menu. Both are the engine's (`RulesEngine.ThrowForStartingPlayer`,
+   `start.mode`, tested) and the options screen now offers both: "throw for start" hands the choice to
+   that throw, while the manual pick (women or men) is `EngineOptions.startingPlayer`. The manual pick
+   remains the default, so choosing who starts stays a deliberate UX divergence.
 7. **The rules are only on disk.** `MenuManager.OpenRules()` opens `SahkkuRules.pdf` by path, which is
    why the readme asks for the PDFs to be copied next to a PC build. It also always opens the English
    PDF, even for the Finnish and Northern Sami locales, although a Norwegian translation

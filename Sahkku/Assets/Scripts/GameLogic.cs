@@ -78,7 +78,10 @@ public class GameLogic : MonoBehaviour
 
     void OnDestroy()
     {
-        if (matchCancellation != null) matchCancellation.Cancel();
+        // Cancel only: the match loop's own exit path (see StartMatch) owns the disposal, so no token is
+        // ever used after its source has been disposed.
+        CancellationTokenSource cancellation = matchCancellation;
+        if (cancellation != null) cancellation.Cancel();
     }
 
     /// <summary>Creates the engine and a fresh state from the ruleset and the settings chosen in the menu.</summary>
@@ -191,6 +194,11 @@ public class GameLogic : MonoBehaviour
         finally
         {
             matchRunning = false;
+            // Release the match's token source here, and only here: the loop is the last user of its token,
+            // so a long session does not keep the old source (and every registration on it) alive.
+            CancellationTokenSource finished = matchCancellation;
+            matchCancellation = null;
+            if (finished != null) finished.Dispose();
         }
     }
 

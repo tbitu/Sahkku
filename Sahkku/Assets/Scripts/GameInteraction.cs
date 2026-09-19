@@ -84,6 +84,11 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     TaskCompletionSource<Move> pendingMove;
     IReadOnlyList<Move> pendingLegalMoves;
 
+    // The registration that cancels a pending decision when the match ends. It is released as soon as the
+    // decision settles, so a whole match does not accumulate one registration per decision.
+    CancellationTokenRegistration rerollCancellation;
+    CancellationTokenRegistration moveCancellation;
+
     public Vector2 boardScalar = new Vector2(1.0f, 1.0f);
 
     /// <summary>False until the board, the dice and the re-roll buttons exist; the controller waits for it.</summary>
@@ -151,13 +156,19 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         IsReady = true;
     }
 
+    void OnDestroy()
+    {
+        CancelPendingDecisions();
+    }
+
     // ------------------------------------------------------------------ the human agent's half
 
     public Task<RerollDecision> RequestRerollAsync(GameState state, CancellationToken cancellationToken)
     {
+        ReleaseCancellation(ref rerollCancellation);
         rerollDecision = NewCompletion<RerollDecision>();
         ShowRerollButtons(true);
-        RegisterCancellation(rerollDecision, cancellationToken);
+        rerollCancellation = RegisterCancellation(rerollDecision, cancellationToken);
         return rerollDecision.Task;
     }
 
@@ -165,10 +176,11 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     {
         selectedPiece = null;
         pendingLegalMoves = legalMoves;
+        ReleaseCancellation(ref moveCancellation);
         pendingMove = NewCompletion<Move>();
         ShowRerollButtons(false);
         UpdatePieces();
-        RegisterCancellation(pendingMove, cancellationToken);
+        moveCancellation = RegisterCancellation(pendingMove, cancellationToken);
         return pendingMove.Task;
     }
 
@@ -185,10 +197,22 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         return new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    static void RegisterCancellation<T>(TaskCompletionSource<T> pending, CancellationToken cancellationToken)
+    /// <summary>Registers the cancellation that ends the decision when the match itself is cancelled.</summary>
+    static CancellationTokenRegistration RegisterCancellation<T>(TaskCompletionSource<T> pending, CancellationToken cancellationToken)
     {
-        if (!cancellationToken.CanBeCanceled) return;
-        cancellationToken.Register(delegate { pending.TrySetCanceled(cancellationToken); });
+        if (!cancellationToken.CanBeCanceled) return default(CancellationTokenRegistration);
+        return cancellationToken.Register(delegate { pending.TrySetCanceled(cancellationToken); });
+    }
+
+    /// <summary>
+    /// Drops a token registration once the decision it belonged to has settled, so a match does not keep one
+    /// registration (and the task source it holds) alive per decision until the scene is gone.
+    /// </summary>
+    static void ReleaseCancellation(ref CancellationTokenRegistration registration)
+    {
+        CancellationTokenRegistration released = registration;
+        registration = default(CancellationTokenRegistration);
+        released.Dispose();
     }
 
     void ResolvePendingReroll(RerollDecision decision)
@@ -198,6 +222,7 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
 
         rerollDecision = null;
         ShowRerollButtons(false);
+        ReleaseCancellation(ref rerollCancellation);
         pending.TrySetResult(decision);
     }
 
@@ -208,7 +233,28 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
 
         pendingMove = null;
         pendingLegalMoves = null;
+        ReleaseCancellation(ref moveCancellation);
         pending.TrySetResult(move);
+    }
+
+    /// <summary>
+    /// Completes whatever the human still owes the match and drops the registrations behind it. The
+    /// controller is awaiting these tasks, so they have to be completed before the scene goes away: a
+    /// cancelled task unwinds the match loop, while a registration that is merely dropped would leave it
+    /// waiting on a decision nobody can make any more.
+    /// </summary>
+    void CancelPendingDecisions()
+    {
+        TaskCompletionSource<RerollDecision> reroll = rerollDecision;
+        rerollDecision = null;
+        ReleaseCancellation(ref rerollCancellation);
+        if (reroll != null) reroll.TrySetCanceled();
+
+        TaskCompletionSource<Move> move = pendingMove;
+        pendingMove = null;
+        pendingLegalMoves = null;
+        ReleaseCancellation(ref moveCancellation);
+        if (move != null) move.TrySetCanceled();
     }
 
     bool IsPendingLegal(Move move)
