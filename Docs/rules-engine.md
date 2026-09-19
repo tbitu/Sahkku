@@ -13,8 +13,9 @@ ignored.
 | Layer | Assembly | Unity? | Responsibility |
 | --- | --- | --- | --- |
 | Rules engine | `Sahkku.Rules` (`Assets/Scripts/Rules/`) | no (`noEngineReferences`) | Board/domain types, the track, JSON ruleset parsing, all rule decisions |
-| Unity bridge | `Assembly-CSharp` (`Assets/Scripts/RulesBridge/`) | yes | Loads the ruleset, provides `UnityEngine.Random` die rolls and the CPU policy |
-| Game driver | `Assembly-CSharp` (`Assets/Scripts/GameLogic.cs`, `GameInteraction.cs`) | yes | Input, timers, animation, audio; delegates every rule decision to the engine |
+| Unity bridge | `Sahkku.RulesBridge` (`Assets/Scripts/RulesBridge/`) | partly | Loads the ruleset and provides `UnityEngine.Random` sources. `PlayerAgents.cs` (human/random/heuristic agents) is engine-free, so it also compiles headlessly and is covered by `PlayerAgentTests` |
+| Match controller | `Assembly-CSharp` (`Assets/Scripts/GameLogic.cs`) | yes | Owns the match state machine: rolls, asks the active `IPlayerAgent` for the re-roll and the move, and falls back to the heuristic agent when an agent fails. Decides no rule itself |
+| Presentation | `Assembly-CSharp` (`Assets/Scripts/GameInteraction.cs`) | yes | Board/dice rendering, turn banner, input; answers the human half of `IHumanInteraction` |
 
 The engine only depends on `System.*`, so the same rule code runs inside Unity, in EditMode tests and
 on a server that drives an LLM NPC.
@@ -161,7 +162,7 @@ dotnet test Tools/RulesTests
 * `evenOdds` marks the three foremost soldiers *loose in place*: they are activated but have not made
   their activation move.
 * Landing on your own active soldier is allowed (soldiers stack) and the mover still counts as moved.
-* The `RandomActionSelector` CPU keeps the original random draw, including its `Clamp(Range(0, 4), …)`
+* The `RandomPlayerAgent` CPU keeps the original random draw, including its `Clamp(Range(0, 4), …)`
   bias.
 * A soldier reaching the opponent's home row recruits the neutral king and announces it with a
   `KingRecruited` event (the pre-engine code recruited the king silently).
@@ -188,12 +189,14 @@ Every clause of the player-facing rules maps onto a ruleset field and a test:
 | "The first one to get X starts" | `start.mode` | `ThrowForStartingPlayer_FirstSahhkuStarts` |
 | "Like odds": three soldiers are taken loose | `variants.evenOdds.soldiersActive` | `InitGame_EvenOdds_MarksTheThreeForemostSoldiersLoose` |
 
-## Future: LLM-driven NPCs
+## Agents (`Sahkku.Rules.Bridge`)
 
-`IActionSelector` is the seam. Today `GameLogic` uses `RandomActionSelector`, which reproduces the
-original AI draws exactly. An LLM-backed implementation would:
+`IPlayerAgent` is the seam. A side is played by a `HumanPlayerAgent` (which forwards both decisions to
+`IHumanInteraction`, implemented by the Unity presentation), a `RandomPlayerAgent` (the AI the game
+shipped with) or a `HeuristicPlayerAgent` (deterministic scoring; also the controller's fallback). An
+LLM-backed implementation would:
 
 1. Read the same `SahkkuRules.json` (it is plain, string-keyed JSON, easy to put in a prompt).
 2. Call `LegalMoves(state)` (or `EvaluateAllowedPlaces` + `GetLegalMoves`) to obtain the legal actions.
-3. Feed the chosen `Move` to `TryApplyMove`, which validates it against the engine: the model may
-   propose anything, but only legal moves reach the board.
+3. Return a `Move`; the controller keeps it only when it is in the legal list and `TryApplyMove` accepts
+   it: the model may propose anything, but only legal moves reach the board.

@@ -1,14 +1,26 @@
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.EnhancedTouch;
+using UnityEngine.Localization.Components;
 using UnityEngine.Localization.Settings;
 using UnityEngine.SceneManagement;
-using static GameLogic;
+using UnityEngine.Serialization;
+using UnityEngine.UI;
 using Sahkku.Rules;
+using Sahkku.Rules.Bridge;
 
-public class GameInteraction : MonoBehaviour
+/// <summary>
+/// Presentation and input for the game scene. It renders the authoritative
+/// <see cref="GameState"/> and answers the human half of the agent contract
+/// (<see cref="IHumanInteraction"/>): a click on a selectable piece plus a destination resolves
+/// <c>RequestMoveAsync</c>, and the two re-roll buttons resolve <c>RequestRerollAsync</c>. It never
+/// decides a rule itself — illegal clicks are simply not offered in the first place.
+/// </summary>
+public class GameInteraction : MonoBehaviour, IHumanInteraction
 {
     public static GameInteraction Instance;
 
@@ -38,13 +50,24 @@ public class GameInteraction : MonoBehaviour
     [SerializeField] Material[] kingPieceMaterial;
     [SerializeField] Material[] kingSelectablePieceMaterial;
     [SerializeField] TextMeshProUGUI gameStatus;
-    [SerializeField] GameObject rollDiceButton;
+
+    // The scene wires this to the button that used to throw the dice by hand. Throwing happens
+    // automatically now, so it is only shown while a human is asked about a sáhkku re-roll, where it
+    // means "throw that die again".
+    [FormerlySerializedAs("rollDiceButton")]
+    [SerializeField] GameObject rerollButton;
+
     [SerializeField] GameObject dieHighlight1;
     [SerializeField] GameObject dieHighlight2;
     [SerializeField] GameObject dieHighlight3;
     int p1MaterialIndex = 0;
     int p2MaterialIndex = 0;
     int kingMaterialIndex = 0;
+
+    const string LocalizationTable = "UI_Text";
+    const string RerollKey = "Reroll_Die";
+    const string KeepKey = "Keep_Die";
+    const string ThinkingKey = "Thinking";
 
     List<GameObject> places = new List<GameObject>();
     List<GameObject> p1Soldiers = new List<GameObject>();
@@ -54,8 +77,17 @@ public class GameInteraction : MonoBehaviour
     GameObject king;
     List<GameObject> dice = new List<GameObject>();
     PieceData selectedPiece;
+    GameObject keepDiceButton;
+
+    // The human's pending decision. The match controller awaits these tasks; a click resolves them.
+    TaskCompletionSource<RerollDecision> rerollDecision;
+    TaskCompletionSource<Move> pendingMove;
+    IReadOnlyList<Move> pendingLegalMoves;
 
     public Vector2 boardScalar = new Vector2(1.0f, 1.0f);
+
+    /// <summary>False until the board, the dice and the re-roll buttons exist; the controller waits for it.</summary>
+    public bool IsReady { get; private set; }
 
     Vector3 GetScaledBoardPosition(int x, int y)
     {
@@ -113,12 +145,164 @@ public class GameInteraction : MonoBehaviour
         dice.Add(Instantiate(dicePrefab, diePos2.transform.position, Quaternion.identity));
         dice.Add(Instantiate(dicePrefab, diePos3.transform.position, Quaternion.identity));
 
+        SetupRerollButtons();
+
         UpdatePieces();
+        IsReady = true;
     }
+
+    // ------------------------------------------------------------------ the human agent's half
+
+    public Task<RerollDecision> RequestRerollAsync(GameState state, CancellationToken cancellationToken)
+    {
+        rerollDecision = NewCompletion<RerollDecision>();
+        ShowRerollButtons(true);
+        RegisterCancellation(rerollDecision, cancellationToken);
+        return rerollDecision.Task;
+    }
+
+    public Task<Move> RequestMoveAsync(GameState state, IReadOnlyList<Move> legalMoves, CancellationToken cancellationToken)
+    {
+        selectedPiece = null;
+        pendingLegalMoves = legalMoves;
+        pendingMove = NewCompletion<Move>();
+        ShowRerollButtons(false);
+        UpdatePieces();
+        RegisterCancellation(pendingMove, cancellationToken);
+        return pendingMove.Task;
+    }
+
+    /// <summary>Called by the re-roll buttons; also usable by keyboard/touch front-ends.</summary>
+    public void ChooseReroll(RerollDecision decision)
+    {
+        ResolvePendingReroll(decision);
+    }
+
+    static TaskCompletionSource<T> NewCompletion<T>()
+    {
+        // Run the continuations asynchronously, so resolving from a click hands control back to the
+        // match loop on the next main-thread pump instead of re-entering it inside the click handler.
+        return new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    static void RegisterCancellation<T>(TaskCompletionSource<T> pending, CancellationToken cancellationToken)
+    {
+        if (!cancellationToken.CanBeCanceled) return;
+        cancellationToken.Register(delegate { pending.TrySetCanceled(cancellationToken); });
+    }
+
+    void ResolvePendingReroll(RerollDecision decision)
+    {
+        TaskCompletionSource<RerollDecision> pending = rerollDecision;
+        if (pending == null) return;
+
+        rerollDecision = null;
+        ShowRerollButtons(false);
+        pending.TrySetResult(decision);
+    }
+
+    void ResolvePendingMove(Move move)
+    {
+        TaskCompletionSource<Move> pending = pendingMove;
+        if (pending == null) return;
+
+        pendingMove = null;
+        pendingLegalMoves = null;
+        pending.TrySetResult(move);
+    }
+
+    bool IsPendingLegal(Move move)
+    {
+        if (pendingLegalMoves == null) return false;
+        foreach (Move candidate in pendingLegalMoves)
+        {
+            if (candidate.pieceId == move.pieceId && candidate.targetPlaceIndex == move.targetPlaceIndex) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The re-roll choice needs two buttons, so the "keep the dice" one is grown from the button the
+    /// scene already has. That way neither button depends on scene wiring added by hand.
+    /// </summary>
+    void SetupRerollButtons()
+    {
+        if (rerollButton == null)
+        {
+            Debug.LogWarning("GameInteraction has no re-roll button; a human's re-roll choice cannot be shown.", this);
+            return;
+        }
+
+        SetButtonLabel(rerollButton, RerollKey);
+
+        keepDiceButton = Instantiate(rerollButton, rerollButton.transform.parent);
+        keepDiceButton.name = "KeepDice";
+        SetButtonLabel(keepDiceButton, KeepKey);
+
+        RectTransform rerollRect = rerollButton.GetComponent<RectTransform>();
+        RectTransform keepRect = keepDiceButton.GetComponent<RectTransform>();
+        if (rerollRect != null)
+        {
+            rerollRect.anchoredPosition = new Vector2(-170.0f, rerollRect.anchoredPosition.y);
+            keepRect.anchoredPosition = new Vector2(170.0f, rerollRect.anchoredPosition.y);
+        }
+
+        // The copy inherited the original's scene wiring (which meant "throw the die again"); the
+        // "keep the dice" button has to answer the other way.
+        Button keepChoice = keepDiceButton.GetComponent<Button>();
+        if (keepChoice != null)
+        {
+            keepChoice.onClick = new Button.ButtonClickedEvent();
+            keepChoice.onClick.AddListener(KeepDice);
+        }
+
+        ShowRerollButtons(false);
+    }
+
+    void SetButtonLabel(GameObject button, string localizationKey)
+    {
+        if (button == null) return;
+
+        // The label is localized in the scene; this button's meaning differs per state, so drive it here.
+        LocalizeStringEvent localize = button.GetComponentInChildren<LocalizeStringEvent>(true);
+        if (localize != null) localize.enabled = false;
+
+        TextMeshProUGUI text = button.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (text != null) text.text = LocalizationSettings.StringDatabase.GetLocalizedString(LocalizationTable, localizationKey);
+    }
+
+    void ShowRerollButtons(bool visible)
+    {
+        if (rerollButton != null) rerollButton.SetActive(visible);
+        if (keepDiceButton != null) keepDiceButton.SetActive(visible);
+    }
+
+    public void KeepDice()
+    {
+        ResolvePendingReroll(RerollDecision.KeepDiceAndProceed);
+    }
+
+    // ------------------------------------------------------------------ rendering and input
 
     void Update()
     {
-        if(GameLogic.Instance.gameOver)
+        UpdateStatusText();
+        UpdateDieHighlight();
+        UpdateRerollButtons();
+
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            BackToMainMenu();
+        }
+
+        ReadPointer();
+    }
+
+    void UpdateStatusText()
+    {
+        if (gameStatus == null) return;
+
+        if (GameLogic.Instance.gameOver)
         {
             // The engine reports why the game ended, so the UI never re-derives a rule.
             bool soldiersExhausted = GameLogic.Instance.winReason == WinReason.OpponentSoldiersExhausted;
@@ -126,76 +310,78 @@ public class GameInteraction : MonoBehaviour
 
             if (playerOneWon && soldiersExhausted)
             {
-                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Soldier");
+                gameStatus.text = Localize("Player_1_Win_Soldier");
             }
             else if (playerOneWon)
             {
-                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Win_Queen");
+                gameStatus.text = Localize("Player_1_Win_Queen");
             }
             else if (soldiersExhausted)
             {
-                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Win_Soldier");
+                gameStatus.text = Localize("Player_2_Win_Soldier");
             }
             else
             {
-                gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Win_Queen");
+                gameStatus.text = Localize("Player_2_Win_Queen");
             }
+            return;
         }
-        else
+
+        switch (GameLogic.Instance.turnPhase)
         {
-            switch (GameLogic.Instance.turnPhase)
-            {
-                case TurnPhase.P1roll:
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Roll");
-                    break;
+            case TurnPhase.P1roll:
+                gameStatus.text = Localize("Player_1_Roll");
+                break;
 
-                case TurnPhase.P1move:
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_1_Move");
-                    break;
+            case TurnPhase.P1move:
+                gameStatus.text = Localize("Player_1_Move");
+                break;
 
-                case TurnPhase.P2roll:
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Roll");
-                    break;
+            case TurnPhase.P2roll:
+                gameStatus.text = Localize("Player_2_Roll");
+                break;
 
-                case TurnPhase.P2move:
-                    gameStatus.text = LocalizationSettings.StringDatabase.GetLocalizedString("UI_Text", "Player_2_Move");
-                    break;
-            }
+            case TurnPhase.P2move:
+                gameStatus.text = Localize("Player_2_Move");
+                break;
         }
 
-        if ((GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move) && !GameLogic.Instance.gameOver)
+        // Both hotseat players see whose turn it is; a bot's side says that it is thinking.
+        if (!GameLogic.Instance.IsCurrentPlayerHuman)
         {
-            dieHighlight1.SetActive(GameLogic.Instance.currentActiveDie == 0);
-            dieHighlight2.SetActive(GameLogic.Instance.currentActiveDie == 1);
-            dieHighlight3.SetActive(GameLogic.Instance.currentActiveDie == 2);
+            gameStatus.text = gameStatus.text + " — " + Localize(ThinkingKey);
         }
-        else
-        {
-            dieHighlight1.SetActive(false);
-            dieHighlight2.SetActive(false);
-            dieHighlight3.SetActive(false);
-        }
+    }
 
-        rollDiceButton.SetActive(false);
-        if (GameLogic.Instance.turnPhase == TurnPhase.P1roll || GameLogic.Instance.turnPhase == TurnPhase.P2roll || GameLogic.Instance.CanReroll())
-        {
-            if (!(GameSettings.singlePlayer && GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P2))
-            {
-                if (!GameLogic.Instance.gameOver)
-                {
-                    rollDiceButton.SetActive(true);
-                }
-            }
-        }
+    static string Localize(string key)
+    {
+        return LocalizationSettings.StringDatabase.GetLocalizedString(LocalizationTable, key);
+    }
 
-        if (Keyboard.current.escapeKey.wasPressedThisFrame)
-        {
-            BackToMainMenu();
-        }
+    void UpdateDieHighlight()
+    {
+        bool moving = GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move;
+        bool show = moving && !GameLogic.Instance.gameOver;
 
+        if (dieHighlight1 != null) dieHighlight1.SetActive(show && GameLogic.Instance.currentActiveDie == 0);
+        if (dieHighlight2 != null) dieHighlight2.SetActive(show && GameLogic.Instance.currentActiveDie == 1);
+        if (dieHighlight3 != null) dieHighlight3.SetActive(show && GameLogic.Instance.currentActiveDie == 2);
+    }
+
+    void UpdateRerollButtons()
+    {
+        // The buttons are visible exactly while a human is being asked about the re-roll.
+        bool pending = rerollDecision != null && !GameLogic.Instance.gameOver;
+        if (rerollButton != null && rerollButton.activeSelf != pending) rerollButton.SetActive(pending);
+        if (keepDiceButton != null && keepDiceButton.activeSelf != pending) keepDiceButton.SetActive(pending);
+    }
+
+    void ReadPointer()
+    {
         bool interactionThisFrame = false;
         Vector2 interactionPosition = Vector2.zero;
-        if(Touchscreen.current != null)
+
+        if (Touchscreen.current != null)
         {
             if (Touchscreen.current.touches.Count > 0)
             {
@@ -209,39 +395,37 @@ public class GameInteraction : MonoBehaviour
             interactionPosition = Mouse.current.position.ReadValue();
         }
 
-        if (interactionThisFrame && (GameLogic.Instance.turnPhase == TurnPhase.P1move || GameLogic.Instance.turnPhase == TurnPhase.P2move))
+        if (!interactionThisFrame || pendingMove == null) return;
+
+        Ray ray = camera.ScreenPointToRay(interactionPosition);
+        if (!Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P1 ? p1mask : p2mask)) return;
+
+        PieceData data = hit.transform.GetComponent<PieceData>();
+        if (data != null)
         {
-            Ray ray = camera.ScreenPointToRay(interactionPosition);
-            if(Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P1 ? p1mask : p2mask))
+            // Both hotseat players select their own pieces exactly the same way.
+            if (data.pieceInfo != null && data.pieceInfo.IsSelectable())
             {
-                Debug.Log("Press: " + hit.transform.name, hit.transform.gameObject);
-
-                PieceData data = hit.transform.GetComponent<PieceData>();
-
-                if (data != null)
+                selectedPiece = data;
+                UpdatePieces();
+                for (int i = 0; i < places.Count; ++i)
                 {
-                    if (data.pieceInfo.IsSelectable())
-                    {
-                        selectedPiece = data;
-                        UpdatePieces();
-                        for (int i = 0; i < places.Count; ++i)
-                        {
-                            bool isValidPlace = data.pieceInfo.allowedPlaces.Contains(i);
-                            places[i].SetActive(isValidPlace);
-                        }
-                    }
-                }
-                else if(hit.transform.tag == "Place")
-                {
-                    if (selectedPiece != null)
-                    {
-                        GameLogic.Instance.MovePiece(selectedPiece.pieceInfo, int.Parse(hit.transform.name));
-                        selectedPiece = null;
-                        UpdatePieces();
-                    }
+                    places[i].SetActive(data.pieceInfo.allowedPlaces.Contains(i));
                 }
             }
+            return;
         }
+
+        if (hit.transform.tag != "Place" || selectedPiece == null) return;
+
+        var move = new Move(selectedPiece.pieceInfo.id, int.Parse(hit.transform.name));
+        if (!IsPendingLegal(move)) return;
+
+        PieceData chosen = selectedPiece;
+        selectedPiece = null;
+        ResolvePendingMove(move);
+        Debug.Log("Move piece (" + chosen.pieceInfo.type + ") to place " + move.targetPlaceIndex);
+        UpdatePieces();
     }
 
     public void BackToMainMenu()
@@ -326,7 +510,7 @@ public class GameInteraction : MonoBehaviour
             }
         }
 
-        for(int i = 0; i < GameLogic.Instance.p2captures; ++i)
+        for (int i = 0; i < GameLogic.Instance.p2captures; ++i)
         {
             if (p1soldierIndex < p1Soldiers.Count)
             {
@@ -373,9 +557,9 @@ public class GameInteraction : MonoBehaviour
 
     public void DisplayDiceResults()
     {
-        for(int i = 0; i < GameLogic.Instance.dice.Count; ++i)
+        for (int i = 0; i < GameLogic.Instance.dice.Count; ++i)
         {
-            if(GameLogic.Instance.dice[i] == DieFace.Zero)
+            if (GameLogic.Instance.dice[i] == DieFace.Zero)
             {
                 dice[i].transform.localEulerAngles = new Vector3(0.0f, 0.0f, 180.0f);
             }

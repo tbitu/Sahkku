@@ -3,6 +3,7 @@
     "rootNamespace": "Sahkku.Rules.Tests",
     "references": [
         "Sahkku.Rules",
+        "Sahkku.RulesBridge",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

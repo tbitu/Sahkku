@@ -1,0 +1,16 @@
+{
+    "name": "Sahkku.RulesBridge",
+    "rootNamespace": "Sahkku.Rules.Bridge",
+    "references": [
+        "Sahkku.Rules"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

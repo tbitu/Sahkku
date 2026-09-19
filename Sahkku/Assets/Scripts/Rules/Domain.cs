@@ -237,15 +237,6 @@ namespace Sahkku.Rules
     }
 
     /// <summary>
-    /// Chooses an action for a player. The current AI implements this randomly; a future LLM-driven
-    /// NPC will provide another implementation backed by the same ruleset.
-    /// </summary>
-    public interface IActionSelector
-    {
-        bool TryChooseAction(GameState state, IReadOnlyList<Move> legalMoves, out Move move);
-    }
-
-    /// <summary>
     /// Asynchronous agent interface implemented by Human, Heuristic, and LLM controllers.
     /// Pure C# interface living in Sahkku.Rules so headless tools can instantiate agents.
     /// </summary>

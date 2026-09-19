@@ -126,6 +126,22 @@ MonoBehaviour:
     m_Localized: Musihkka
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000000000
+    m_Localized: 'Bircut ođđasit'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000004096
+    m_Localized: 'Doala bircuid'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000008192
+    m_Localized: 'jurddaha…'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000012288
+    m_Localized: 'Bircut álggus'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []
