@@ -28,8 +28,8 @@ task_tracker:
     task_path: plans/archive/tasks/2026-09-19-sahkku-architecture/3-llm-agent-and-endpoint.md
     status: archived
   - task_id: 4-cli-bench-and-eval
-    task_path: null
-    status: not_created
+    task_path: plans/tasks/4-cli-bench-and-eval.md
+    status: draft
 ---
 
 # Plan: Sáhkku Architecture Refactor
@@ -77,7 +77,7 @@ Compartmentalize the Sáhkku digital game into strictly bounded architectural la
 | `1-engine-decisions-and-state` | `plans/archive/tasks/2026-09-19-sahkku-architecture/1-engine-decisions-and-state.md` | Add explicit reroll choice mechanics, throw-for-start integration, and state serialization to pure-C# `Sahkku.Rules`. | N/A | Decision completeness & LLM state formatting | archived |
 | `2-match-controller-and-hotseat` | `plans/archive/tasks/2026-09-19-sahkku-architecture/2-match-controller-and-hotseat.md` | Refactor `GameLogic` into `MatchController` driving `IPlayerAgent` slots; implement 2P hotseat UX and `HumanPlayerAgent`. | `1-engine-decisions-and-state` | Compartmentalization & 2-player local play | archived |
 | `3-llm-agent-and-endpoint` | `plans/archive/tasks/2026-09-19-sahkku-architecture/3-llm-agent-and-endpoint.md` | Implement `LlmPlayerAgent`, OpenAI/LM Studio REST client, structured JSON parser, retry loop, and heuristic fallback. | `2-match-controller-and-hotseat` | LLM NPC integration | archived |
-| `4-cli-bench-and-eval` | `null` | Create headless CLI tool to run and benchmark automated bot/LLM games off-engine. | `3-llm-agent-and-endpoint` | Headless verification and evaluation | not_created |
+| `4-cli-bench-and-eval` | `plans/tasks/4-cli-bench-and-eval.md` | Create headless CLI tool to run and benchmark automated bot/LLM games off-engine. | `3-llm-agent-and-endpoint` | Headless verification and evaluation | draft |
 
 ## Coverage Map
 
