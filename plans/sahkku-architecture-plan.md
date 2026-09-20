@@ -14,16 +14,16 @@ task_order:
   - 2-match-controller-and-hotseat
   - 3-llm-agent-and-endpoint
   - 4-cli-bench-and-eval
-active_task_id: 2-match-controller-and-hotseat
-last_completed_task_id: 1-engine-decisions-and-state
+active_task_id: 3-llm-agent-and-endpoint
+last_completed_task_id: 2-match-controller-and-hotseat
 archive_group: 2026-09-19-sahkku-architecture
 task_tracker:
   - task_id: 1-engine-decisions-and-state
     task_path: plans/archive/tasks/2026-09-19-sahkku-architecture/1-engine-decisions-and-state.md
     status: archived
   - task_id: 2-match-controller-and-hotseat
-    task_path: plans/tasks/2-match-controller-and-hotseat.md
-    status: draft
+    task_path: plans/archive/tasks/2026-09-19-sahkku-architecture/2-match-controller-and-hotseat.md
+    status: archived
   - task_id: 3-llm-agent-and-endpoint
     task_path: null
     status: not_created
@@ -75,7 +75,7 @@ Compartmentalize the Sáhkku digital game into strictly bounded architectural la
 | Task ID | Task Path | Purpose | Depends On | Closes Gap | Status |
 |---|---|---|---|---|---|
 | `1-engine-decisions-and-state` | `plans/archive/tasks/2026-09-19-sahkku-architecture/1-engine-decisions-and-state.md` | Add explicit reroll choice mechanics, throw-for-start integration, and state serialization to pure-C# `Sahkku.Rules`. | N/A | Decision completeness & LLM state formatting | archived |
-| `2-match-controller-and-hotseat` | `plans/tasks/2-match-controller-and-hotseat.md` | Refactor `GameLogic` into `MatchController` driving `IPlayerAgent` slots; implement 2P hotseat UX and `HumanPlayerAgent`. | `1-engine-decisions-and-state` | Compartmentalization & 2-player local play | draft |
+| `2-match-controller-and-hotseat` | `plans/archive/tasks/2026-09-19-sahkku-architecture/2-match-controller-and-hotseat.md` | Refactor `GameLogic` into `MatchController` driving `IPlayerAgent` slots; implement 2P hotseat UX and `HumanPlayerAgent`. | `1-engine-decisions-and-state` | Compartmentalization & 2-player local play | archived |
 | `3-llm-agent-and-endpoint` | `null` | Implement `LlmPlayerAgent`, OpenAI/LM Studio REST client, structured JSON parser, retry loop, and heuristic fallback. | `2-match-controller-and-hotseat` | LLM NPC integration | not_created |
 | `4-cli-bench-and-eval` | `null` | Create headless CLI tool to run and benchmark automated bot/LLM games off-engine. | `3-llm-agent-and-endpoint` | Headless verification and evaluation | not_created |
 

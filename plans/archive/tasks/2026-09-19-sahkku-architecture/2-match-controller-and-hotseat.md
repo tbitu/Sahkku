@@ -5,7 +5,7 @@ task_family_id: match-controller-and-hotseat
 sequence_key: "2"
 task_id: 2-match-controller-and-hotseat
 title: "Match Controller Decoupling, Asynchronous Player Agents, and 2-Player Hotseat"
-status: draft
+status: archived
 phase: phase2
 target_files:
   - "Sahkku/Assets/Scripts/GameLogic.cs"
@@ -20,7 +20,7 @@ system_context_ref: null
 owners:
   - "tarjeib"
 doc_bubble_id: null
-impl_bubble_id: null
+impl_bubble_id: 2-match-controller-and-hotseat
 supersedes: []
 superseded_by: null
 archive_group: 2026-09-19-sahkku-architecture
