@@ -5,7 +5,7 @@ task_family_id: llm-agent-and-endpoint
 sequence_key: "3"
 task_id: 3-llm-agent-and-endpoint
 title: "LLM NPC Agent, OpenAI/LM Studio REST Client, Structured Output, and Heuristic Fallback"
-status: draft
+status: archived
 phase: phase3
 target_files:
   - "Sahkku/Assets/Scripts/RulesBridge/LlmClient.cs"

@@ -143,6 +143,10 @@ MonoBehaviour:
     m_Key: Men_Start
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000020480
+    m_Key: Llm_Opponent
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

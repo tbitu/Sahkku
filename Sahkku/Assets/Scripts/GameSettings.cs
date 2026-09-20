@@ -1,4 +1,6 @@
+using System;
 using UnityEngine;
+using Sahkku.Rules.Bridge;
 
 public class GameSettings : MonoBehaviour
 {
@@ -24,7 +26,10 @@ public class GameSettings : MonoBehaviour
         RandomBot = 1,
         HeuristicBot = 2,
 
-        /// <summary>Reserved for the LLM NPC (task 3); the heuristic bot plays this side until then.</summary>
+        /// <summary>
+        /// The LLM NPC: <see cref="GameSettings.GetLlmConfig"/>'s endpoint picks the move, and every
+        /// failure there falls back to <see cref="AgentType.HeuristicBot"/>'s policy.
+        /// </summary>
         LlmBot = 3
     }
 
@@ -45,6 +50,32 @@ public class GameSettings : MonoBehaviour
     public static PieceModel kingModel = PieceModel.Wood;
     public static bool muteSounds = false;
     public static bool muteMusic = false;
+
+    /// <summary>
+    /// Where the LLM NPC sends its requests: any OpenAI-compatible chat-completions endpoint. The default
+    /// is LM Studio's local server (start it, load a model, then pick the LLM opponent in the menu).
+    /// </summary>
+    public static string llmEndpointUrl = "http://localhost:1234/v1/chat/completions";
+
+    /// <summary>The model name the endpoint should load/serve; LM Studio ignores it when one model is loaded.</summary>
+    public static string llmModelName = "pairflow-player";
+
+    /// <summary>
+    /// How long the endpoint may take before the agent gives up and plays the heuristic choice. Deliberately
+    /// short: a bot that stalls the match is worse than the deterministic fallback.
+    /// </summary>
+    public static float llmTimeoutSeconds = 5.0f;
+
+    /// <summary>The endpoint configuration for a side played by <see cref="AgentType.LlmBot"/>.</summary>
+    public static LlmConfig GetLlmConfig()
+    {
+        return new LlmConfig
+        {
+            EndpointUrl = llmEndpointUrl,
+            ModelName = llmModelName,
+            RequestTimeout = TimeSpan.FromSeconds(Mathf.Max(0.1f, llmTimeoutSeconds))
+        };
+    }
 
     public static bool IsHumanAgent(AgentType type)
     {

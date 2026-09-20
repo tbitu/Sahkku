@@ -146,6 +146,10 @@ MonoBehaviour:
     m_Localized: 'Miehet aloittavat'
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000020480
+    m_Localized: 'LLM-vastustaja'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []
