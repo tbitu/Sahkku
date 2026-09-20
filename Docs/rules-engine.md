@@ -13,7 +13,7 @@ ignored.
 | Layer | Assembly | Unity? | Responsibility |
 | --- | --- | --- | --- |
 | Rules engine | `Sahkku.Rules` (`Assets/Scripts/Rules/`) | no (`noEngineReferences`) | Board/domain types, the track, JSON ruleset parsing, all rule decisions |
-| Unity bridge | `Sahkku.RulesBridge` (`Assets/Scripts/RulesBridge/`) | partly | Loads the ruleset and provides `UnityEngine.Random` sources. `PlayerAgents.cs` (human/random/heuristic agents) is engine-free, so it also compiles headlessly and is covered by `PlayerAgentTests` |
+| Unity bridge | `Sahkku.RulesBridge` (`Assets/Scripts/RulesBridge/`) | partly | Loads the ruleset and provides `UnityEngine.Random` sources. `PlayerAgents.cs` (human/random/heuristic agents), `LlmClient.cs` (REST client and structured-output parser) and `LlmPlayerAgent.cs` (the LLM NPC) are engine-free, so they also compile headlessly and are covered by `PlayerAgentTests` and `LlmAgentTests` |
 | Match controller | `Assembly-CSharp` (`Assets/Scripts/GameLogic.cs`) | yes | Owns the match state machine: rolls, asks the active `IPlayerAgent` for the re-roll and the move, and falls back to the heuristic agent when an agent fails. Decides no rule itself |
 | Presentation | `Assembly-CSharp` (`Assets/Scripts/GameInteraction.cs`) | yes | Board/dice rendering, turn banner, input; answers the human half of `IHumanInteraction` |
 
@@ -142,7 +142,8 @@ ruleset with no way to win.
 over the middle row and a full lap), standard/even-odds setup, movement per piece/die, capture, recruit,
 king activation, `landingEndsGame`, the ruleset-driven variants of those rules, move validation, dice
 ordering, re-roll conditions, turn transitions, JSON validation, state invariants and two seeded
-full-game simulations.
+full-game simulations. `PlayerAgentTests.cs` covers the human/random/heuristic agents and
+`LlmAgentTests.cs` the LLM NPC against a scripted transport, so no test touches the network.
 
 The engine sources only need `System.*`, so the same tests also run headlessly, which makes the ruleset
 verifiable without Unity:
@@ -193,10 +194,30 @@ Every clause of the player-facing rules maps onto a ruleset field and a test:
 
 `IPlayerAgent` is the seam. A side is played by a `HumanPlayerAgent` (which forwards both decisions to
 `IHumanInteraction`, implemented by the Unity presentation), a `RandomPlayerAgent` (the AI the game
-shipped with) or a `HeuristicPlayerAgent` (deterministic scoring; also the controller's fallback). An
-LLM-backed implementation would:
+shipped with), a `HeuristicPlayerAgent` (deterministic scoring; also the controller's fallback) or an
+`LlmPlayerAgent` (an LLM NPC behind an OpenAI-compatible endpoint).
 
-1. Read the same `SahkkuRules.json` (it is plain, string-keyed JSON, easy to put in a prompt).
-2. Call `LegalMoves(state)` (or `EvaluateAllowedPlaces` + `GetLegalMoves`) to obtain the legal actions.
-3. Return a `Move`; the controller keeps it only when it is in the legal list and `TryApplyMove` accepts
-   it: the model may propose anything, but only legal moves reach the board.
+### The LLM NPC (`LlmClient.cs`, `LlmPlayerAgent.cs`)
+
+`LlmPlayerAgent` asks the model to rank the options the engine already declared legal:
+
+1. The prompt is `GameStateFormatter.FormatPromptContext(state, legalMoves)` - the authoritative board,
+   the dice in spending order and every legal move as a numbered list — plus the JSON contract
+   (`{"move_index": N, "reasoning": "..."}`, or `{"reroll": true, "reasoning": "..."}` for the optional
+   sáhkku re-roll). `LlmChatRequest` builds the chat-completions body by hand, so the bridge keeps
+   compiling for IL2CPP/WebGL.
+2. `LlmResponseParser` reads the answer: the `choices[0].message.content` envelope, Markdown fences,
+   quoted numbers and JSON embedded in prose, and gives up (returns `false`) rather than throwing.
+3. The move is taken from `legalMoves[moveIndex]`, so an accepted proposal is legal by construction and no
+   model output can mutate the state. A forced move (one legal option) skips the round trip entirely.
+
+Every failure — no endpoint, connection refused, HTTP non-200, timeout, an unusable answer, an index
+outside the list, a re-roll the engine does not offer — logs once and falls back to
+`HeuristicPlayerAgent`, so a missing model degrades the opponent instead of breaking the match. A
+cancelled match is the one case that propagates (`OperationCanceledException`): the transport applies its
+deadline through a *linked* token, so "the model was too slow" is distinguishable from "the scene left".
+
+`GameSettings.GetLlmConfig()` supplies the endpoint, the model name and the deadline (`llmEndpointUrl`,
+`llmModelName`, `llmTimeoutSeconds`); `GameLogic` builds one `HttpClientLlmTransport` per match and
+releases it when the match loop ends. On the options screen, the grown "LLM opponent" row switches player
+two between that agent and the deterministic bot.

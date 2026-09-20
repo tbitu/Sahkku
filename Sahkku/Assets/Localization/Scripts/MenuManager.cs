@@ -20,12 +20,22 @@ public class MenuManager : MonoBehaviour
     // the starting player, so this toggle is greyed out while the throw is on.
     private Toggle menStartToggle;
 
+    // Grown the same way: switches player two between the deterministic bot and the LLM NPC.
+    private Toggle menLlmToggle;
+
     /// <summary>The border the options table's label and control columns share, from the panel's middle.</summary>
     const float TableEdgeX = -60.0f;
 
-    // The options table is exactly as tall as its four rows, so its start options sit above it instead.
+    // The options table is exactly as tall as its four rows, so its grown rows sit above it instead.
     const float ThrowForStartRowY = -80.0f;
     const float MenStartRowY = -165.0f;
+    const float LlmOpponentRowY = -250.0f;
+
+    /// <summary>
+    /// How far the authored options table and its play/back buttons are pushed down to make room for the
+    /// third grown row (see <see cref="MakeRoomForLlmRow"/>).
+    /// </summary>
+    const float TableShiftY = -100.0f;
 
     private void Start()
     {
@@ -44,7 +54,9 @@ public class MenuManager : MonoBehaviour
     public void PlaySolo()
     {
         GameSettings.p1AgentType = GameSettings.AgentType.Human;
-        GameSettings.p2AgentType = GameSettings.AgentType.HeuristicBot;
+        // Whichever opponent the options screen last picked: the deterministic bot, or the LLM NPC.
+        bool llmOpponent = menLlmToggle != null && menLlmToggle.isOn;
+        GameSettings.p2AgentType = llmOpponent ? GameSettings.AgentType.LlmBot : GameSettings.AgentType.HeuristicBot;
         ShowGameOptions ();
     }
 
@@ -76,6 +88,25 @@ public class MenuManager : MonoBehaviour
         Debug.Log("Starting player: " + GameSettings.startingPlayer);
     }
 
+    /// <summary>
+    /// Switches player two's opponent. On: the LLM NPC answers through
+    /// <see cref="GameSettings.GetLlmConfig"/>'s endpoint. Off: the deterministic bot plays that side —
+    /// but only when that side was the LLM, so a human side (hotseat) is left alone.
+    /// </summary>
+    public void ToggleLlmOpponent(bool value)
+    {
+        if (value)
+        {
+            GameSettings.p2AgentType = GameSettings.AgentType.LlmBot;
+        }
+        else if (GameSettings.p2AgentType == GameSettings.AgentType.LlmBot)
+        {
+            GameSettings.p2AgentType = GameSettings.AgentType.HeuristicBot;
+        }
+
+        Debug.Log("LLM opponent: " + value + " (player two is " + GameSettings.p2AgentType + ")");
+    }
+
     public void ShowMainMenu()
     {
         mainMenuPanel.SetActive(true);
@@ -86,6 +117,17 @@ public class MenuManager : MonoBehaviour
     {
         mainMenuPanel.SetActive(false);
         gameOptionsPanel.SetActive(true);
+        // The panel is shared by solo and hotseat, so the row is brought in line with the side that was
+        // actually chosen (Play Solo / Play Versus) rather than keeping a stale toggle state.
+        SyncLlmOpponentRow();
+    }
+
+    /// <summary>Mirrors player two's agent into the grown row. The handler it triggers is idempotent.</summary>
+    void SyncLlmOpponentRow()
+    {
+        if (menLlmToggle == null) return;
+        bool llmOpponent = GameSettings.p2AgentType == GameSettings.AgentType.LlmBot;
+        if (menLlmToggle.isOn != llmOpponent) menLlmToggle.isOn = llmOpponent;
     }
 
     public void ToggleAudio(bool value)
@@ -118,9 +160,9 @@ public class MenuManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Adds the two starting-player rows (whether to throw for the start, and who starts when that throw is
-    /// off) to the options screen by copying the existing "even odds" row. Growing the rows at runtime keeps
-    /// every build from having to hand-wire two more scene objects.
+    /// Adds the grown rows (whether to throw for the start, who starts when that throw is off, and who
+    /// plays player two) to the options screen by copying the existing "even odds" row. Growing the rows at
+    /// runtime keeps every build from having to hand-wire three more scene objects.
     ///
     /// They are placed in the free band above the options table rather than appended to the two table
     /// columns: those columns are exactly as tall as their four authored rows, so a fifth row would be laid
@@ -130,15 +172,46 @@ public class MenuManager : MonoBehaviour
     {
         if (oddToggle == null || gameOptionsPanel == null)
         {
-            Debug.LogWarning("MenuManager has no options row to copy; the starting-player options are unavailable.", this);
+            Debug.LogWarning("MenuManager has no options row to copy; the grown options are unavailable.", this);
             return;
         }
 
+        // The band above the table is 218 tall (the panel is 1080 and the table's top edge sits 209 below
+        // it): two rows of the 80-tall toggle graphic fit on an 85 pitch, three do not, so the third is
+        // given room of its own first.
+        MakeRoomForLlmRow();
+
         AddOptionRow("ThrowForStart", "Throw_For_Start", ThrowForStartRowY, GameSettings.throwForStartingPlayer, ToggleThrowForStart);
         menStartToggle = AddOptionRow("MenStart", "Men_Start", MenStartRowY, GameSettings.startingPlayer == GameSettings.Player.Two, ToggleMenStart);
+        menLlmToggle = AddOptionRow("LlmOpponent", "Llm_Opponent", LlmOpponentRowY, GameSettings.p2AgentType == GameSettings.AgentType.LlmBot, ToggleLlmOpponent);
 
         // A thrown start picks the starting player itself, so the manual choice is not on offer next to it.
         menStartToggle.interactable = !GameSettings.throwForStartingPlayer;
+    }
+
+    /// <summary>
+    /// The band above the table has room for two of the three grown rows, because the table's first row
+    /// starts 209 below the panel top and the third row would land on it. The table ("Settings", 350 tall)
+    /// and the play/back buttons ("Buttons") are therefore moved down by one row pitch plus a margin, which
+    /// keeps their order and spacing and leaves both well inside the 1080-tall panel.
+    /// </summary>
+    void MakeRoomForLlmRow()
+    {
+        ShiftPanelChild("Settings");
+        ShiftPanelChild("Buttons");
+    }
+
+    /// <summary>Moves a direct child of the options panel down by <see cref="TableShiftY"/>.</summary>
+    void ShiftPanelChild(string childName)
+    {
+        Transform child = gameOptionsPanel.transform.Find(childName);
+        RectTransform rect = child == null ? null : child as RectTransform;
+        if (rect == null)
+        {
+            Debug.LogWarning("MenuManager could not find the options panel's '" + childName + "' child; the LLM opponent row may overlap it.", this);
+            return;
+        }
+        rect.anchoredPosition += new Vector2(0.0f, TableShiftY);
     }
 
     /// <summary>

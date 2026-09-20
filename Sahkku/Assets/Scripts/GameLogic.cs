@@ -29,6 +29,13 @@ public class GameLogic : MonoBehaviour
     IRandomSource randomSource;
     IBotRandomSource botRandom;
     readonly IPlayerAgent[] agents = new IPlayerAgent[2];
+
+    /// <summary>
+    /// Resources the match's agents own (the LLM transport's HTTP client). Released when the match loop
+    /// ends, which is the only place that knows the agents will not be asked for another decision.
+    /// </summary>
+    readonly List<IDisposable> agentResources = new List<IDisposable>();
+
     CancellationTokenSource matchCancellation;
     bool matchRunning;
 
@@ -127,14 +134,28 @@ public class GameLogic : MonoBehaviour
                 return new HumanPlayerAgent(owner, name, GameInteraction.Instance);
             case GameSettings.AgentType.RandomBot:
                 return new RandomPlayerAgent(owner, name, botRandom);
+            case GameSettings.AgentType.LlmBot:
+                return CreateLlmAgent(owner, name);
             default:
-                // AgentType.LlmBot is wired up in task 3; until then the deterministic bot plays that side.
                 if (type != GameSettings.AgentType.HeuristicBot)
                 {
-                    Debug.LogWarning("Agent type " + type + " is not implemented yet; using the heuristic agent.", this);
+                    Debug.LogWarning("Agent type " + type + " is not implemented; using the heuristic agent.", this);
                 }
                 return new HeuristicPlayerAgent(owner, name, engine);
         }
+    }
+
+    /// <summary>
+    /// Wires the LLM NPC: the endpoint configuration comes from <see cref="GameSettings"/>, the transport
+    /// is this match's own (and therefore disposed with it), and every decision the model cannot answer is
+    /// logged and played heuristically instead — see <see cref="LlmPlayerAgent"/>.
+    /// </summary>
+    IPlayerAgent CreateLlmAgent(PieceOwner owner, string name)
+    {
+        LlmConfig config = GameSettings.GetLlmConfig();
+        var transport = new HttpClientLlmTransport(null, config.RequestTimeout);
+        agentResources.Add(transport);
+        return new LlmPlayerAgent(owner, name, transport, config, engine, message => Debug.Log("[LLM] " + message, this));
     }
 
     GameSettings.AgentType CurrentAgentType()
@@ -194,6 +215,12 @@ public class GameLogic : MonoBehaviour
         finally
         {
             matchRunning = false;
+
+            // The agents' own resources die with the match: a transport left alive per scene load would
+            // keep its connections (and its handlers) forever.
+            foreach (IDisposable resource in agentResources) resource.Dispose();
+            agentResources.Clear();
+
             // Release the match's token source here, and only here: the loop is the last user of its token,
             // so a long session does not keep the old source (and every registration on it) alive.
             CancellationTokenSource finished = matchCancellation;
