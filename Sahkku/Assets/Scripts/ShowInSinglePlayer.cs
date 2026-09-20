@@ -4,6 +4,7 @@ public class ShowInSinglePlayer : MonoBehaviour
 {
     void Start()
     {
-        gameObject.SetActive(GameSettings.singlePlayer);
+        // "Single player" now means exactly one human is playing (see GameSettings.IsSinglePlayer).
+        gameObject.SetActive(GameSettings.IsSinglePlayer);
     }
 }

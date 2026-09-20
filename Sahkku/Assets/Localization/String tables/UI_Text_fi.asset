@@ -126,6 +126,26 @@ MonoBehaviour:
     m_Localized: Musiikki
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000000000
+    m_Localized: 'Heitä sáhkku uudelleen'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000004096
+    m_Localized: 'Pidä nopat'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000008192
+    m_Localized: 'miettii…'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000012288
+    m_Localized: 'Heitä aloituksesta'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000016384
+    m_Localized: 'Miehet aloittavat'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <Compile Include="../../Sahkku/Assets/Scripts/Rules/**/*.cs" />
+    <!-- The agents are plain C#: only PlayerAgents.cs of the Unity bridge layer is engine-free. -->
+    <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs" />
     <Compile Include="../../Sahkku/Assets/Tests/Rules/**/*.cs" />
   </ItemGroup>
 

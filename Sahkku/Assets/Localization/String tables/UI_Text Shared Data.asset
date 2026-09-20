@@ -123,6 +123,26 @@ MonoBehaviour:
     m_Key: Music
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000000000
+    m_Key: Reroll_Die
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000004096
+    m_Key: Keep_Die
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000008192
+    m_Key: Thinking
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000012288
+    m_Key: Throw_For_Start
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000016384
+    m_Key: Men_Start
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

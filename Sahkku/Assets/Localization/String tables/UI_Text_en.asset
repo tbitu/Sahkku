@@ -126,6 +126,26 @@ MonoBehaviour:
     m_Localized: Music
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000000000
+    m_Localized: 'Reroll sáhkku'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000004096
+    m_Localized: 'Keep the dice'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000008192
+    m_Localized: 'thinking…'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000012288
+    m_Localized: 'Throw for start'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000016384
+    m_Localized: 'Men start'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

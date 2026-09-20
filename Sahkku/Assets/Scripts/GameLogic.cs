@@ -1,29 +1,36 @@
+using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using Sahkku.Rules;
+using Sahkku.Rules.Bridge;
 
 /// <summary>
-/// Unity-facing gameplay driver for sáhkku. All rule decisions are delegated to the pure-C#
-/// <see cref="RulesEngine"/> (defined by Assets/Resources/SahkkuRules.json); this class only
-/// orchestrates input, timers, presentation and audio, and translates engine events to sounds.
+/// Unity-facing match controller for sáhkku. It owns the match state machine and asks the two player
+/// agents (<see cref="IPlayerAgent"/>, configured in <see cref="GameSettings"/>) for every decision;
+/// <see cref="RulesEngine"/> remains the only authority on what is legal. This class only paces the
+/// match, animates it and turns engine events into sounds — it never decides a rule itself.
 /// </summary>
 public class GameLogic : MonoBehaviour
 {
     public static GameLogic Instance;
 
-    public bool keyboardDebug = true;
+    [Header("Pacing")]
+    [SerializeField] float diceSettleSeconds = 1.1f;
+    [SerializeField] float botThinkSeconds = 1.0f;
+
+    [Header("Safety")]
+    [SerializeField] float agentReplyTimeoutSeconds = 10.0f;
+    [SerializeField] int maxRerollsPerThrow = 32;
 
     GameState state;
     RulesEngine engine;
-    UnityRandomSource randomSource;
-    IActionSelector actionSelector;
-
-    float aiTimer = 0.0f;
-    float aiSpeed = 1.0f;
-    bool aiCanAct = false;
-    int playerPieceIndex = 0;
-    bool tryRollDice = false;
+    IRandomSource randomSource;
+    IBotRandomSource botRandom;
+    readonly IPlayerAgent[] agents = new IPlayerAgent[2];
+    CancellationTokenSource matchCancellation;
+    bool matchRunning;
 
     public static int BOARD_SIZE_X { get { return RuleSetProvider.Load().board.width; } }
     public static int BOARD_SIZE_Y { get { return RuleSetProvider.Load().board.height; } }
@@ -38,149 +45,351 @@ public class GameLogic : MonoBehaviour
     public int p1captures { get { return state.p1Captures; } }
     public int p2captures { get { return state.p2Captures; } }
 
-    void Awake()
-    {
-        Instance = this;
-        InitGame();
-    }
-
-    void Update()
-    {
-        if (state.gameOver)
-        {
-            ClearAllAllowedPlaces();
-            return;
-        }
-
-        aiCanAct = false;
-        if (Time.time > aiTimer)
-        {
-            aiTimer = Time.time + aiSpeed;
-            aiCanAct = true;
-        }
-
-        if ((Keyboard.current.spaceKey.wasPressedThisFrame && keyboardDebug) || tryRollDice || (GameSettings.singlePlayer && GetCurrentPlayer() == PieceOwner.P2 && aiCanAct))
-        {
-            tryRollDice = false;
-
-            if (turnPhase == TurnPhase.P1roll || turnPhase == TurnPhase.P2roll || CanReroll())
-            {
-                if (turnPhase == TurnPhase.P1roll || turnPhase == TurnPhase.P2roll)
-                {
-                    // The engine rolls, puts the dice into the ruleset's spending order, opens the move
-                    // phase and hands the turn over when the first die cannot be used.
-                    engine.RollAndBeginTurn(state, randomSource);
-                    AnimateDiceThrow();
-                }
-                else
-                {
-                    engine.RerollFirstDie(state, randomSource);
-                    GameInteraction.Instance.RollDice(currentActiveDie);
-                    engine.OrderDice(state);
-                    AudioManager.Instance.PlayRandomSound("BircutOkta", 8, 0.5f);
-                }
-
-                GameInteraction.Instance.UpdatePieces();
-            }
-        }
-
-        if (keyboardDebug)
-        {
-            if (Keyboard.current.digit1Key.wasPressedThisFrame) playerPieceIndex = 0;
-            if (Keyboard.current.digit2Key.wasPressedThisFrame) playerPieceIndex = 1;
-            if (Keyboard.current.digit3Key.wasPressedThisFrame) playerPieceIndex = 2;
-            if (Keyboard.current.digit4Key.wasPressedThisFrame) playerPieceIndex = 3;
-            if (Keyboard.current.digit5Key.wasPressedThisFrame) playerPieceIndex = 4;
-            if (Keyboard.current.digit6Key.wasPressedThisFrame) playerPieceIndex = 5;
-            if (Keyboard.current.digit7Key.wasPressedThisFrame) playerPieceIndex = 6;
-            if (Keyboard.current.digit8Key.wasPressedThisFrame) playerPieceIndex = 7;
-        }
-
-        if ((Keyboard.current.enterKey.wasPressedThisFrame && keyboardDebug) || (GameSettings.singlePlayer && GetCurrentPlayer() == PieceOwner.P2 && aiCanAct))
-        {
-            if (turnPhase == TurnPhase.P1move || turnPhase == TurnPhase.P2move)
-            {
-                if (GameSettings.singlePlayer && GetCurrentPlayer() == PieceOwner.P2)
-                {
-                    Move aiMove;
-                    if (actionSelector.TryChooseAction(state, engine.LegalMoves(state), out aiMove))
-                    {
-                        MovePiece(engine.FindPiece(state, aiMove.pieceId), aiMove.targetPlaceIndex);
-                    }
-                }
-                else
-                {
-                    List<Piece> potentialPieces = engine.GetPotentialPieces(state);
-                    int pieceIndex = Mathf.Clamp(playerPieceIndex, 0, potentialPieces.Count - 1);
-                    Piece piece = potentialPieces[pieceIndex];
-                    int moveIndex = Mathf.Clamp(UnityEngine.Random.Range(0, 4), 0, piece.allowedPlaces.Count - 1);
-                    MovePiece(piece, piece.allowedPlaces[moveIndex]);
-                }
-            }
-        }
-    }
-
-    public void InitGame()
-    {
-        engine = new RulesEngine(RuleSetProvider.Load());
-        randomSource = new UnityRandomSource();
-        actionSelector = new RandomActionSelector();
-
-        state = engine.InitGame(new EngineOptions(
-            GameSettings.startingPlayer == GameSettings.Player.One ? PieceOwner.P1 : PieceOwner.P2,
-            GameSettings.evenOdds));
-    }
-
-    public void InitDiceRoll()
-    {
-        tryRollDice = true;
-    }
-
+    /// <summary>The player whose turn it is and who therefore owns the next decision.</summary>
     public PieceOwner GetCurrentPlayer()
     {
         return state.CurrentPlayer;
     }
 
+    /// <summary>True while the current player may still throw the sáhkku die again.</summary>
     public bool CanReroll()
     {
         return engine.CanReroll(state);
     }
 
-    public void MovePiece(Piece piece, int placeIndex)
+    /// <summary>True when a human, rather than a bot, is deciding right now. Drives the turn banner.</summary>
+    public bool IsCurrentPlayerHuman
     {
-        if (piece == null) return;
+        get { return GameSettings.IsHumanAgent(CurrentAgentType()); }
+    }
 
-        if (piece.allowedPlaces.Count == 0)
+    void Awake()
+    {
+        Instance = this;
+        // The state has to exist before any Start() runs: GameInteraction builds the board from it.
+        InitGame();
+    }
+
+    void Start()
+    {
+        BuildAgents();
+        StartMatch();
+    }
+
+    void OnDestroy()
+    {
+        // Cancel only: the match loop's own exit path (see StartMatch) owns the disposal, so no token is
+        // ever used after its source has been disposed.
+        CancellationTokenSource cancellation = matchCancellation;
+        if (cancellation != null) cancellation.Cancel();
+    }
+
+    /// <summary>Creates the engine and a fresh state from the ruleset and the settings chosen in the menu.</summary>
+    public void InitGame()
+    {
+        engine = new RulesEngine(RuleSetProvider.Load());
+        randomSource = new UnityRandomSource();
+        botRandom = new UnityBotRandomSource();
+
+        bool throwForStart = GameSettings.throwForStartingPlayer;
+        state = engine.InitGame(
+            new EngineOptions(
+                GameSettings.startingPlayer == GameSettings.Player.One ? PieceOwner.P1 : PieceOwner.P2,
+                GameSettings.evenOdds,
+                throwForStart),
+            throwForStart ? randomSource : null);
+    }
+
+    /// <summary>
+    /// The scene's roll button calls this. Throwing the dice happens automatically when a turn starts,
+    /// so the button is only meaningful while a human is being asked about a sáhkku re-roll: it then
+    /// means "throw that die again".
+    /// </summary>
+    public void InitDiceRoll()
+    {
+        if (GameInteraction.Instance != null)
         {
-            Debug.LogWarning("Trying to move piece without valid places!", gameObject);
-            return;
+            GameInteraction.Instance.ChooseReroll(RerollDecision.RerollActiveDie);
         }
+    }
 
-        Debug.Log("Move piece (" + piece.type + ") to place " + placeIndex);
+    void BuildAgents()
+    {
+        agents[0] = CreateAgent(PieceOwner.P1, GameSettings.p1AgentType, "Player 1");
+        agents[1] = CreateAgent(PieceOwner.P2, GameSettings.p2AgentType, "Player 2");
+    }
 
-        List<RuleEvent> events;
+    IPlayerAgent CreateAgent(PieceOwner owner, GameSettings.AgentType type, string name)
+    {
+        switch (type)
+        {
+            case GameSettings.AgentType.Human:
+                return new HumanPlayerAgent(owner, name, GameInteraction.Instance);
+            case GameSettings.AgentType.RandomBot:
+                return new RandomPlayerAgent(owner, name, botRandom);
+            default:
+                // AgentType.LlmBot is wired up in task 3; until then the deterministic bot plays that side.
+                if (type != GameSettings.AgentType.HeuristicBot)
+                {
+                    Debug.LogWarning("Agent type " + type + " is not implemented yet; using the heuristic agent.", this);
+                }
+                return new HeuristicPlayerAgent(owner, name, engine);
+        }
+    }
+
+    GameSettings.AgentType CurrentAgentType()
+    {
+        return state.CurrentPlayer == PieceOwner.P1 ? GameSettings.p1AgentType : GameSettings.p2AgentType;
+    }
+
+    IPlayerAgent CurrentAgent()
+    {
+        return state.CurrentPlayer == PieceOwner.P1 ? agents[0] : agents[1];
+    }
+
+    // ------------------------------------------------------------------ the match loop
+
+    /// <summary>
+    /// Runs one whole match. Every decision is an <c>await</c> on an agent, so a bot never blocks the
+    /// frame and a human never stalls the match for anybody else.
+    /// </summary>
+    async void StartMatch()
+    {
+        if (matchRunning) return;
+        matchRunning = true;
+
+        matchCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = matchCancellation.Token;
+
         try
         {
-            events = engine.ApplyMove(state, new Move(piece.id, placeIndex));
+            await WaitForPresentationAsync(cancellationToken);
+
+            while (!state.gameOver && !cancellationToken.IsCancellationRequested)
+            {
+                if (state.IsRollPhase)
+                {
+                    engine.RollDice(state, randomSource);
+                    AnimateDiceThrow();
+                    GameInteraction.Instance.UpdatePieces();
+                    await DelayAsync(diceSettleSeconds, cancellationToken);
+                }
+
+                if (state.gameOver) break;
+
+                await ResolveRerollDecisionAsync(CurrentAgent(), cancellationToken);
+                if (state.gameOver) break;
+
+                await PlayMovePhaseAsync(CurrentAgent(), cancellationToken);
+            }
         }
-        catch (IllegalMoveException exception)
+        catch (OperationCanceledException)
         {
-            // The engine refuses illegal moves outright; the UI only ever offers legal ones, so this
-            // means a stale selection rather than a rule bug.
-            Debug.LogWarning("Ignoring illegal move: " + exception.Message, gameObject);
-            GameInteraction.Instance.UpdatePieces();
+            // The scene left (or the bubble was stopped); the match simply stops here.
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception, this);
+        }
+        finally
+        {
+            matchRunning = false;
+            // Release the match's token source here, and only here: the loop is the last user of its token,
+            // so a long session does not keep the old source (and every registration on it) alive.
+            CancellationTokenSource finished = matchCancellation;
+            matchCancellation = null;
+            if (finished != null) finished.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Resolves the optional sáhkku re-roll. The engine never decides this, so the active agent is asked
+    /// until it keeps the dice (or until the safety cap stops a bot that keeps drawing sáhkku).
+    /// </summary>
+    async Task ResolveRerollDecisionAsync(IPlayerAgent agent, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; attempt < maxRerollsPerThrow; ++attempt)
+        {
+            if (state.gameOver || cancellationToken.IsCancellationRequested) return;
+
+            if (!engine.CanReroll(state))
+            {
+                // Not on offer: keeping the dice is the only legal resolution, and it opens the move phase.
+                engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+                return;
+            }
+
+            RerollDecision decision = await RequestRerollAsync(agent, cancellationToken);
+            if (decision == RerollDecision.RerollActiveDie)
+            {
+                engine.ApplyRerollDecision(state, randomSource, RerollDecision.RerollActiveDie);
+                GameInteraction.Instance.RollDice(state.currentActiveDie);
+                AudioManager.Instance.PlayRandomSound("BircutOkta", 8, 0.5f);
+                GameInteraction.Instance.UpdatePieces();
+                await DelayAsync(diceSettleSeconds, cancellationToken);
+                continue;
+            }
+
+            engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
             return;
+        }
+
+        Debug.LogWarning("Re-rolling was capped after " + maxRerollsPerThrow + " attempts; keeping the dice.", this);
+        if (!state.gameOver && !state.IsRollPhase) engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+    }
+
+    async Task PlayMovePhaseAsync(IPlayerAgent agent, CancellationToken cancellationToken)
+    {
+        while (!state.gameOver && !state.IsRollPhase && !cancellationToken.IsCancellationRequested)
+        {
+            List<Move> legalMoves = engine.LegalMoves(state);
+            if (legalMoves.Count == 0)
+            {
+                // No die of this throw can be spent: the engine hands the turn over.
+                engine.EvaluateAllowedPlaces(state);
+                engine.NextPlayerTurn(state);
+                GameInteraction.Instance.UpdatePieces();
+                return;
+            }
+
+            if (!IsCurrentPlayerHuman) await DelayAsync(botThinkSeconds, cancellationToken);
+
+            Move move = await RequestMoveAsync(agent, legalMoves, cancellationToken);
+            ApplyMove(move, legalMoves);
+            await DelayAsync(0.15f, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Applies an agent's move. A move the engine refuses can never reach the board, so the controller
+    /// substitutes the deterministic heuristic choice instead of hanging the match.
+    /// </summary>
+    void ApplyMove(Move move, List<Move> legalMoves)
+    {
+        List<RuleEvent> events;
+        if (!engine.TryApplyMove(state, move, out events))
+        {
+            Debug.LogWarning("Agent " + CurrentAgent().Name + " proposed " + move + ", which is not legal; playing the heuristic choice.", this);
+            Move fallback = HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
+            if (!engine.TryApplyMove(state, fallback, out events))
+            {
+                // Unreachable: every fallback comes from the list the engine just reported as legal.
+                Debug.LogError("No legal move could be applied; handing the turn over.", this);
+                engine.NextPlayerTurn(state);
+                GameInteraction.Instance.UpdatePieces();
+                return;
+            }
         }
 
         PlayRuleEvents(events);
         GameInteraction.Instance.UpdatePieces();
     }
 
-    void ClearAllAllowedPlaces()
+    // ------------------------------------------------------------------ agent queries
+
+    async Task<RerollDecision> RequestRerollAsync(IPlayerAgent agent, CancellationToken cancellationToken)
     {
-        engine.ClearAllowedPlaces(state);
-        GameInteraction.Instance.UpdatePieces();
+        try
+        {
+            Task<RerollDecision> pending = agent.DecideRerollAsync(state, cancellationToken);
+            if (pending == null) return RerollDecision.KeepDiceAndProceed;
+
+            if (!IsCurrentPlayerHuman && await TimedOutAsync(pending, cancellationToken))
+            {
+                Debug.LogWarning("Agent " + agent.Name + " did not answer in time; keeping the dice.", this);
+                return RerollDecision.KeepDiceAndProceed;
+            }
+
+            RerollDecision decision = await pending;
+            if (decision == RerollDecision.RerollActiveDie && !engine.CanReroll(state))
+            {
+                Debug.LogWarning("Agent " + agent.Name + " asked for a re-roll that is not on offer; keeping the dice.", this);
+                return RerollDecision.KeepDiceAndProceed;
+            }
+            return decision;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Agent " + agent.Name + " failed to choose a re-roll (" + exception.Message + "); keeping the dice.", this);
+            return HeuristicPlayerAgent.ChooseReroll(engine, state);
+        }
     }
+
+    async Task<Move> RequestMoveAsync(IPlayerAgent agent, List<Move> legalMoves, CancellationToken cancellationToken)
+    {
+        try
+        {
+            Task<Move> pending = agent.DecideMoveAsync(state, legalMoves, cancellationToken);
+            if (pending == null) return HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
+
+            if (!IsCurrentPlayerHuman && await TimedOutAsync(pending, cancellationToken))
+            {
+                Debug.LogWarning("Agent " + agent.Name + " did not answer in time; playing the heuristic choice.", this);
+                return HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
+            }
+
+            Move move = await pending;
+            if (!Contains(legalMoves, move))
+            {
+                Debug.LogWarning("Agent " + agent.Name + " proposed " + move + ", which is not a legal move; playing the heuristic choice.", this);
+                return HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
+            }
+            return move;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Agent " + agent.Name + " failed to choose a move (" + exception.Message + "); playing the heuristic choice.", this);
+            return HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
+        }
+    }
+
+    static bool Contains(List<Move> legalMoves, Move move)
+    {
+        foreach (Move candidate in legalMoves)
+        {
+            if (candidate.pieceId == move.pieceId && candidate.targetPlaceIndex == move.targetPlaceIndex) return true;
+        }
+        return false;
+    }
+
+    /// <summary>True when the agent did not answer within the timeout (humans are never timed out).</summary>
+    async Task<bool> TimedOutAsync(Task pending, CancellationToken cancellationToken)
+    {
+        Task timeout = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0.1f, agentReplyTimeoutSeconds)), cancellationToken);
+        Task finished = await Task.WhenAny(pending, timeout);
+        return finished != pending;
+    }
+
+    async Task WaitForPresentationAsync(CancellationToken cancellationToken)
+    {
+        // Start() order between this controller and GameInteraction is undefined; the board and the dice
+        // have to exist before the first roll animates.
+        while (!cancellationToken.IsCancellationRequested &&
+               (GameInteraction.Instance == null || !GameInteraction.Instance.IsReady))
+        {
+            await Task.Yield();
+        }
+    }
+
+    static async Task DelayAsync(float seconds, CancellationToken cancellationToken)
+    {
+        if (seconds <= 0.0f)
+        {
+            await Task.Yield();
+            return;
+        }
+        await Task.Delay(TimeSpan.FromSeconds(seconds), cancellationToken);
+    }
+
+    // ------------------------------------------------------------------ presentation
 
     void AnimateDiceThrow()
     {
