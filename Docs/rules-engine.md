@@ -16,6 +16,7 @@ ignored.
 | Unity bridge | `Sahkku.RulesBridge` (`Assets/Scripts/RulesBridge/`) | partly | Loads the ruleset and provides `UnityEngine.Random` sources. `PlayerAgents.cs` (human/random/heuristic agents), `LlmClient.cs` (REST client and structured-output parser) and `LlmPlayerAgent.cs` (the LLM NPC) are engine-free, so they also compile headlessly and are covered by `PlayerAgentTests` and `LlmAgentTests` |
 | Match controller | `Assembly-CSharp` (`Assets/Scripts/GameLogic.cs`) | yes | Owns the match state machine: rolls, asks the active `IPlayerAgent` for the re-roll and the move, and falls back to the heuristic agent when an agent fails. Decides no rule itself |
 | Presentation | `Assembly-CSharp` (`Assets/Scripts/GameInteraction.cs`) | yes | Board/dice rendering, turn banner, input; answers the human half of `IHumanInteraction` |
+| Benchmark tool | `Tools/SahkkuBench` (console app) | no | Plays bot-vs-bot and LLM-vs-bot matches through the engine, applies the turn-cap/timeout rules, and reports the run as a table or as JSON |
 
 The engine only depends on `System.*`, so the same rule code runs inside Unity, in EditMode tests and
 on a server that drives an LLM NPC.
@@ -142,8 +143,9 @@ ruleset with no way to win.
 over the middle row and a full lap), standard/even-odds setup, movement per piece/die, capture, recruit,
 king activation, `landingEndsGame`, the ruleset-driven variants of those rules, move validation, dice
 ordering, re-roll conditions, turn transitions, JSON validation, state invariants and two seeded
-full-game simulations. `PlayerAgentTests.cs` covers the human/random/heuristic agents and
-`LlmAgentTests.cs` the LLM NPC against a scripted transport, so no test touches the network.
+full-game simulations. `PlayerAgentTests.cs` covers the human/random/heuristic agents,
+`LlmAgentTests.cs` the LLM NPC against a scripted transport, and `BenchmarkTests.cs` the headless match
+runner, its statistics and its fallback counter — so no test touches the network.
 
 The engine sources only need `System.*`, so the same tests also run headlessly, which makes the ruleset
 verifiable without Unity:
@@ -221,3 +223,39 @@ deadline through a *linked* token, so "the model was too slow" is distinguishabl
 `llmModelName`, `llmTimeoutSeconds`); `GameLogic` builds one `HttpClientLlmTransport` per match and
 releases it when the match loop ends. On the options screen, the grown "LLM opponent" row switches player
 two between that agent and the deterministic bot.
+
+## Headless benchmark (`Tools/SahkkuBench`)
+
+`Tools/SahkkuBench` is a plain .NET 8 console app that plays matches off-engine — no Unity, no scene — with
+the same rules and the same agents:
+
+```bash
+# Headless (needs the .NET SDK); `--help` lists every flag.
+dotnet run --project Tools/SahkkuBench -- --games 100 --p1 heuristic --p2 random
+dotnet run --project Tools/SahkkuBench -- --games 10 --p1 llm --p2 heuristic --json
+```
+
+`MatchRunner` owns one game and decides no rule itself: it rolls, asks the active agent
+(`DecideRerollAsync` while `CanReroll`, `DecideMoveAsync` while a die is up for spending), checks every
+proposal with `IsLegalMove` before handing it to `ApplyMove`, and runs `ValidateState` after every change.
+The failure rules the harness has to follow are the same ones the game follows:
+
+* An illegal proposal or a broken invariant is a **rule violation**: the game is aborted, the reason is
+  recorded, and the run exits `1`. The runner never substitutes a move to get past one.
+* `--max-turns` turns a game that runs past the cap into a **draw** (`Winner`/`WinReason` `None`), which is
+  a result, not a failure.
+* A per-turn deadline turns an agent that does not answer into a **failed game**, which also exits `1`.
+
+`BenchmarkStats` folds the games into win rates, half-move averages, captures, re-roll counts and LLM
+fallbacks, printed as a table or as JSON (`--json`). The fallback number comes from `LlmFallbackCounter`,
+which reads the agent's own log lines: the agent logs its decisions (which carry the model's free-form
+reasoning) and its fallbacks, so the counter matches a fallback on the *shape* of the line — the sentence
+it starts with — rather than by looking for a phrase anywhere in it, which a model echoing the agent's
+wording inside its reasoning would otherwise inflate. Runs are reproducible: with `--seed` the dice come
+from `SeededRandomSource` — SplitMix64 written out, so a .NET upgrade cannot change a seed's games — and
+the random bots draw from the same generator.
+
+`Sahkku/Assets/Tests/Rules/BenchmarkTests.cs` covers the runner, the statistics and the fallback counter.
+The harness lives outside `Assets/`, so no Unity assembly can reference it: the fixture is compiled by
+`Tools/RulesTests/RulesTests.csproj` (which includes `MatchRunner.cs`, `BenchmarkStats.cs` and
+`LlmFallbackCounter.cs` directly) and is deliberately empty in the EditMode runner.
