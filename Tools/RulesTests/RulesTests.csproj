@@ -29,6 +29,13 @@
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs" />
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmClient.cs" />
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmPlayerAgent.cs" />
+    <!-- The benchmark harness (Tools/SahkkuBench) is a plain .NET 8 console app: its runner, its
+         statistics and its LLM fallback counter are engine-free too, so the same sources are compiled
+         here and covered by BenchmarkTests. Program.cs is left out — the CLI itself is a smoke-test
+         surface, not a unit. -->
+    <Compile Include="../SahkkuBench/MatchRunner.cs" />
+    <Compile Include="../SahkkuBench/BenchmarkStats.cs" />
+    <Compile Include="../SahkkuBench/LlmFallbackCounter.cs" />
     <Compile Include="../../Sahkku/Assets/Tests/Rules/**/*.cs" />
   </ItemGroup>
 

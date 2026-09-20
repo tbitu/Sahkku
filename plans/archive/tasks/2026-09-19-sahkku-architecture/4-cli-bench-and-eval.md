@@ -5,7 +5,7 @@ task_family_id: cli-bench-and-eval
 sequence_key: "4"
 task_id: 4-cli-bench-and-eval
 title: "Headless CLI Match Runner, Evaluation Harness, and Benchmarking Tool"
-status: draft
+status: archived
 phase: phase4
 target_files:
   - "Tools/SahkkuBench/SahkkuBench.csproj"

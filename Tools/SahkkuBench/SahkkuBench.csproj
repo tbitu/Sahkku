@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless match runner, evaluation harness and benchmarking tool.
+
+    The engine (Sahkku.Rules) and the engine-free part of the bridge (Sahkku.RulesBridge) only need
+    System.*, so the very same sources Unity compiles also compile into this console application. That
+    is what lets a benchmark run the real rules against the real agents without a Unity installation:
+
+      dotnet run in Tools/SahkkuBench (Program.cs carries the flags)
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SahkkuBench</AssemblyName>
+    <RootNamespace>Sahkku.Bench</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Sahkku/Assets/Scripts/Rules/**/*.cs" />
+    <!-- Only PlayerAgents.cs, LlmClient.cs and LlmPlayerAgent.cs of the Unity bridge layer are
+         engine-free (ActionSources.cs and RuleSetProvider.cs reach into UnityEngine). -->
+    <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs" />
+    <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmClient.cs" />
+    <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmPlayerAgent.cs" />
+  </ItemGroup>
+
+</Project>
