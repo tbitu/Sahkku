@@ -19,8 +19,8 @@ last_completed_task_id: null
 archive_group: 2026-09-21-sahkku-graphics-overhaul
 task_tracker:
   - task_id: 1-pipeline-and-mat-fixes
-    task_path: null
-    status: not_created
+    task_path: plans/tasks/1-pipeline-and-mat-fixes.md
+    status: draft
     notes: "Enable Global Volume post-processing (ACES tonemapping, SSAO, bloom, MSAA), anisotropic filtering, and fix prefab material assignments"
   - task_id: 2-pbr-texture-upscale
     task_path: null
