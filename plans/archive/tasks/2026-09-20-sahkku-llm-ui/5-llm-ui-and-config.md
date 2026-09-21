@@ -5,7 +5,7 @@ task_family_id: llm-ui-and-config
 sequence_key: "5"
 task_id: 5-llm-ui-and-config
 title: "UI Interface and Shared Configuration File for OpenAI-Compatible LLM Endpoint"
-status: draft
+status: archived
 phase: phase5
 target_files:
   - "Sahkku/Assets/Scripts/RulesBridge/LlmConfigFile.cs"

@@ -150,6 +150,14 @@ MonoBehaviour:
     m_Localized: 'LLM opponent'
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000024576
+    m_Localized: 'LLM endpoint'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000028672
+    m_Localized: 'LLM model'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

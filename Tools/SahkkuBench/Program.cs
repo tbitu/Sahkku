@@ -146,8 +146,13 @@ namespace Sahkku.Bench
                     return new RandomPlayerAgent(owner, "Random", new SeededRandomSource(unchecked(seed * 31 + (int)owner)));
 
                 case "llm":
-                    var config = new LlmConfig { EndpointUrl = NormalizeEndpoint(options.Endpoint) };
-                    if (!string.IsNullOrEmpty(options.Model)) config.ModelName = options.Model;
+                    // options.Endpoint/Model already carry the flag > shared file > default resolution from
+                    // TryParse; the URL is completed to the chat-completions path here.
+                    var config = new LlmConfig
+                    {
+                        EndpointUrl = LlmConfigFile.NormalizeEndpoint(options.Endpoint),
+                        ModelName = LlmConfigFile.NormalizeModel(options.Model)
+                    };
 
                     var transport = new HttpClientLlmTransport(null, config.RequestTimeout);
                     held.Add(transport);
@@ -156,18 +161,6 @@ namespace Sahkku.Bench
                 default:
                     throw new ArgumentException("Unknown agent type '" + kind + "' for " + flag + ".");
             }
-        }
-
-        /// <summary>
-        /// Accepts an endpoint or a base URL, because both are natural to type: the shipped default (and the
-        /// one in the help) is the base <c>http://localhost:1234/v1</c>, while the client posts to the
-        /// chat-completions path under it.
-        /// </summary>
-        static string NormalizeEndpoint(string endpoint)
-        {
-            string value = string.IsNullOrEmpty(endpoint) ? "http://localhost:1234/v1" : endpoint.Trim();
-            if (value.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return value;
-            return value.TrimEnd('/') + "/chat/completions";
         }
 
         // ------------------------------------------------------------------ reporting
@@ -240,8 +233,8 @@ namespace Sahkku.Bench
             public int Games = 10;
             public string P1 = "heuristic";
             public string P2 = "heuristic";
-            public string Endpoint = "http://localhost:1234/v1";
-            public string Model = "";
+            public string Endpoint = LlmConfigFile.DefaultEndpoint;
+            public string Model = LlmConfigFile.DefaultModel;
             public int Seed;
             public bool UseRandomSeed = true;
             public int MaxHalfMoves = 10000;
@@ -264,8 +257,10 @@ Options:
   --games <N>        Games to play (default: 10).
   --p1 <type>        Agent for player one: heuristic | random | llm (default: heuristic).
   --p2 <type>        Agent for player two: heuristic | random | llm (default: heuristic).
-  --endpoint <url>   OpenAI-compatible endpoint for LLM agents (default: http://localhost:1234/v1).
-  --model <name>     Model name sent to the endpoint (default: pairflow-player, as in the game).
+  --endpoint <url>   OpenAI-compatible endpoint for LLM agents (default: the shared llm-config.json,
+                     else http://localhost:1234/v1/chat/completions).
+  --model <name>     Model name sent to the endpoint (default: the shared llm-config.json, else
+                     pairflow-player, as in the game).
   --seed <int>       Base seed for a reproducible run (default: the clock).
   --max-turns <N>    Half-moves before a game is declared a draw (default: 10000).
   --ruleset <path>   Path to SahkkuRules.json (default: SAHKKU_RULESET, else searched upwards).
@@ -285,6 +280,12 @@ Exit codes:
             {
                 options = new Options();
                 error = null;
+
+                // Whether the caller named each endpoint setting itself. Only the ones they did not are
+                // resolved from the shared config file below, so a flag always beats the file and the file
+                // always beats the built-in default.
+                bool endpointGiven = false;
+                bool modelGiven = false;
 
                 for (int i = 0; i < args.Length; ++i)
                 {
@@ -360,11 +361,13 @@ Exit codes:
                                 return false;
                             }
                             options.Endpoint = value;
+                            endpointGiven = true;
                             break;
 
                         case "--model":
                             if (!TryReadValue(args, ref i, out value, out error)) return false;
                             options.Model = value;
+                            modelGiven = true;
                             break;
 
                         case "--ruleset":
@@ -381,6 +384,15 @@ Exit codes:
                             error = "unknown option '" + args[i] + "'.";
                             return false;
                     }
+                }
+
+                // The shared file fills in only what the command line left out. Loading it here, once, keeps
+                // the precedence (flag > file > default) in one place instead of at every agent construction.
+                if (!endpointGiven || !modelGiven)
+                {
+                    (string endpoint, string model) = LlmConfigFile.Load();
+                    if (!endpointGiven) options.Endpoint = endpoint;
+                    if (!modelGiven) options.Model = model;
                 }
 
                 return true;
