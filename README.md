@@ -1,57 +1,58 @@
 # Sáhkku (Digital Sáhkku)
 
+A digital implementation of **Sáhkku**, a traditional Sámi running-fight board game with centuries of history. Built with Unity and powered by an engine-agnostic, pure-C# rules core.
+
 Play in browser: [itch.io](https://zhamul.itch.io/digital-shkku)
 
-Sáhkku is a traditional Sámi running-fight board game with centuries of history. This repository contains a digital implementation built in Unity with an engine-agnostic, pure-C# rules core.
+---
+
+## Features
+
+- **Pure-C# Rules Engine**: A decoupled, JSON-driven ruleset ([`SahkkuRules.json`](Sahkku/Assets/Resources/SahkkuRules.json)) supporting figure-of-eight board track traversal, move validation, and game state invariant enforcement.
+- **Multiple Game Modes**: Local 2-player hotseat and single-player matches against autonomous player agents.
+- **Pluggable Player Agents**:
+  - **Human**: Interactive GUI or CLI input.
+  - **Random**: Baseline randomized move selection.
+  - **Rule-Based**: Heuristic greedy agent evaluating captures, piece advancement, and king mechanics.
+  - **LLM Agent**: Integrates with any OpenAI-compatible `/v1/chat/completions` endpoint (LM Studio, Ollama, vLLM, OpenAI).
+- **In-Game Settings & Localization**: In-game menu for configuring LLM endpoints and model names, backed by a shared `llm-config.json` configuration file synced between Unity and headless CLI tools.
+- **Headless Benchmarking & CLI Runner (`SahkkuBench`)**: Run simulated matches and evaluation benchmarks headlessly at high speed without launching Unity.
+- **Headless Test Suite**: 100% of the game rules are verified independently of Unity via standard .NET unit tests.
 
 ---
 
-## Features Added Since Fork
+## Quick Start
 
-- **Pure-C# Rules Engine & Headless Verification**:
-  - Decoupled, JSON-driven rules engine ([`Sahkku/Assets/Resources/SahkkuRules.json`](Sahkku/Assets/Resources/SahkkuRules.json)) with figure-of-eight board track traversal, move validation, and game state invariant enforcement.
-  - Headless test suite ([`Tools/RulesTests`](Tools/RulesTests/)) verifying all rules without Unity via standard `dotnet test`.
-
-- **Modular Player Agents & Local 2P Hotseat**:
-  - Decoupled match controller supporting pluggable agents: Human, Random, Rule-Based (greedy heuristic), and LLM.
-  - Local 2-Player hotseat mode and starting player selection from the menu.
-
-- **OpenAI-Compatible LLM Player Agent**:
-  - REST client supporting any OpenAI-compatible `/v1/chat/completions` endpoint (LM Studio, Ollama, vLLM, OpenAI).
-  - Translates game state and legal moves into structured LLM prompts, parsing JSON move choices with automatic fallback validation.
-
-- **In-Game Settings & Shared Configuration**:
-  - In-game options UI in `MenuManager` to view and configure LLM endpoint URL and model name (with multi-language localization).
-  - Shared `llm-config.json` configuration file ([`Sahkku/Assets/Scripts/RulesBridge/LlmConfigFile.cs`](Sahkku/Assets/Scripts/RulesBridge/LlmConfigFile.cs)) synced across the Unity runtime and CLI tools.
-
-- **Headless CLI Match Runner & Benchmarks ([`Tools/SahkkuBench`](Tools/SahkkuBench/))**:
-  - Headless CLI harness to run automated matches, statistics, and evaluation benchmarks between arbitrary agent pairings.
-
----
-
-## Quick Start (Headless CLI)
-
-Run unit tests:
+### Run Unit Tests
 ```bash
 dotnet test Tools/RulesTests/RulesTests.csproj
 ```
 
-Run CLI benchmark matches:
+### Run Headless Benchmarks & Matches
 ```bash
 # Run 10 matches between Rule-Based and Random agents
 dotnet run --project Tools/SahkkuBench -- --p1 rule --p2 random --games 10
 
-# Run a match against an LLM player
+# Play a match against an LLM endpoint
 dotnet run --project Tools/SahkkuBench -- --p1 rule --p2 llm --endpoint http://localhost:1234/v1/chat/completions --model pairflow-player
 ```
 
 ---
 
-## Notes & Known Quirks
+## Project Structure
 
-- **Engine & Toolchain**: Made with Unity 6 (6.0000.6.0f1); headless tools and test suite target .NET 8.
-- **Rules Documentation**: See [`Docs/rules-engine.md`](Docs/rules-engine.md) for the ruleset schema and [`Docs/rules-alignment.md`](Docs/rules-alignment.md) for how the engine maps onto traditional printed rules.
-- **Dice Reroll**: Dice are rerolled one at a time because dice are re-sorted after each roll.
-- **Starting Player**: The menu allows picking the starting player; throwing for start is implemented in the engine (`RulesEngine.ThrowForStartingPlayer`) but not active in the UI.
-- **Even Odds**: "Like odds" marks the three foremost soldiers loose in place (see [`Docs/rules-alignment.md`](Docs/rules-alignment.md)).
-- **PC Builds**: When building for PC from Unity, manually copy the rules PDF files to the root of the build.
+- `Sahkku/Assets/Scripts/Rules/`: Pure-C# game rules engine and state representation.
+- `Sahkku/Assets/Resources/SahkkuRules.json`: Data-driven ruleset specification.
+- `Sahkku/Assets/Scripts/RulesBridge/`: Modular agent interfaces (`IPlayerAgent`), agent implementations (Human, Random, Rule-Based, LLM), and shared config loader (`LlmConfigFile`).
+- `Sahkku/Assets/Localization/`: Menu UI, options dialogs, and multi-language string tables.
+- `Tools/RulesTests/`: Headless NUnit test suite for the rules engine.
+- `Tools/SahkkuBench/`: Headless CLI evaluation and benchmarking harness.
+- `Docs/`: Engine specification (`Docs/rules-engine.md`) and historical alignment notes (`Docs/rules-alignment.md`).
+
+---
+
+## Development Notes
+
+- **Tech Stack**: Unity 6 (6.0000.6.0f1) for the graphical client; .NET 8 for headless tools and tests.
+- **PC Builds**: When building PC binaries from Unity, manually copy the rules PDF files to the root of the build directory.
+- **Dice Rerolling**: In the graphical client, dice are rerolled one at a time because dice are re-sorted after each roll.
