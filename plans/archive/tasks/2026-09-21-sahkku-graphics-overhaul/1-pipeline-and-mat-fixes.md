@@ -5,7 +5,7 @@ task_family_id: pipeline-and-mat-fixes
 sequence_key: "1"
 task_id: 1-pipeline-and-mat-fixes
 title: "Render Pipeline Calibration, Post-Processing Activation, and Material/Prefab Correction"
-status: draft
+status: archived
 phase: phase1
 target_files:
   - "Sahkku/Assets/Scenes/Game.unity"
@@ -62,7 +62,7 @@ Eliminate blown-out linear lighting, edge aliasing, and grazing-angle texture bl
 3. **Prefab & Material Binding Corrections**:
    - [`KingBone.prefab`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Prefabs/KingBone.prefab), [`QueenBone1.prefab`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Prefabs/QueenBone1.prefab), and [`QueenBone2.prefab`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Prefabs/QueenBone2.prefab) must reference [`Bone.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/Bone.mat) (`guid: 63f796a4a895d8245bbaedf008f5e289`), removing the placeholder reference to [`Moss.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/Moss.mat).
    - In [`BoneSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/BoneSelected.mat) and [`BoneSelected2.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/BoneSelected2.mat), bind `_BaseMap` to [`M_bone_base.png`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/M_bone_base.png) (`guid: fbbf3b83ae894ae40a8af1b43323484e`).
-   - In [`KingRockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/KingRockSelected.mat) and [`RockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/RockSelected.mat), bind `_BaseMap` to [`M_king_rock.png`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/M_king_rock.png) (`guid: e96a0961da8777042a9833cb79fa3a91`) and [`M_base_rock.png`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/M_base_rock.png) (`guid: 21fa12ce8e2d4234ea720516ff258169`) respectively.
+   - In [`KingRockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/KingRockSelected.mat) and [`RockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/RockSelected.mat), bind `_BaseMap` to [`M_king_rock.png`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/M_king_rock.png) (`guid: 933c6df04a3653f42ab3498976bad687`) and [`M_base_rock.png`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/M_base_rock.png) (`guid: e8ecefdec7f230248ae0637ef3937870`) respectively.
 4. **Non-Breaking Invariant**:
    - All YAML files must preserve exact Unity serialization headers and GUIDs.
    - Gameplay rules, match logic, and test suites must remain unaffected.
@@ -110,9 +110,9 @@ In each `.meta` file:
 - [`BoneSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/BoneSelected.mat) & [`BoneSelected2.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/BoneSelected2.mat):
   - Set `_BaseMap` texture to `fbbf3b83ae894ae40a8af1b43323484e` (`M_bone_base.png`).
 - [`KingRockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/KingRockSelected.mat):
-  - Set `_BaseMap` texture to `e96a0961da8777042a9833cb79fa3a91` (`M_king_rock.png`).
+  - Set `_BaseMap` texture to `933c6df04a3653f42ab3498976bad687` (`M_king_rock.png`).
 - [`RockSelected.mat`](file:///home/tarjeib/repo/Sahkku/Sahkku/Assets/Materials/RockSelected.mat):
-  - Set `_BaseMap` texture to `21fa12ce8e2d4234ea720516ff258169` (`M_base_rock.png`).
+  - Set `_BaseMap` texture to `e8ecefdec7f230248ae0637ef3937870` (`M_base_rock.png`).
 
 ## L2 - Implementation Guidance & Verification Commands
 
@@ -127,3 +127,9 @@ In each `.meta` file:
   # Verify GUIDs exist in project
   "
   ```
+
+### Review Closures (round 2, 2026-09-21)
+
+- **L0 §3 / L1 §5 GUIDs corrected.** The `M_king_rock.png` and `M_base_rock.png` GUIDs previously recorded in this document (`e96a0961da8777042a9833cb79fa3a91`, `21fa12ce8e2d4234ea720516ff258169`) are declared by no `.meta` anywhere in this project, so binding them would have written dangling texture references. The GUIDs now recorded (`933c6df04a3653f42ab3498976bad687`, `e8ecefdec7f230248ae0637ef3937870`) are the ones the matching `_BaseColor` slots already referenced.
+- **L0 §2 vs L1 §2 `Samples` ambiguity resolved.** `Samples: 1` is URP's `AOSampleOption.Medium`, i.e. 8 samples (`ScreenSpaceAmbientOcclusionSettings.AOSampleOption` in URP 17.x is `High` = 12, `Medium` = 8, `Low` = 4; editor tooltip "Low:4 samples, Medium: 8 samples, High: 12 samples"). L0's `Samples: 8` and L1's `Samples: 1` therefore describe the same 8-tap setting; `PC_Renderer.asset` needs no change. Cross-check: `NormalSamples: 1` is `NormalQuality.Medium` = 5 depth samples, matching the same enum family.
+- **Selection material albedo slots kept consistent.** `Selected.shadergraph` declares only `BaseColor` (`_BaseColor`), `Normal` (`_Normal`), `AO` (`_AO`) and `SelectionColor`, and its `SurfaceDescription.BaseColor` block is fed from the `_BaseColor` texture property; `_BaseMap` (L1 §5) and `_MainTex` are dead slots. All texture slots that could carry albedo are bound to that piece's own texture so no bone/stone selection material can resolve to wood.
