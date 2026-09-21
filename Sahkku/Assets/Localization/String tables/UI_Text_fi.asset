@@ -150,6 +150,14 @@ MonoBehaviour:
     m_Localized: 'LLM-vastustaja'
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000024576
+    m_Localized: 'LLM-päätepiste'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000028672
+    m_Localized: 'LLM-malli'
+    m_Metadata:
+      m_Items: []
   references:
     version: 2
     RefIds: []

@@ -23,11 +23,12 @@
 
   <ItemGroup>
     <Compile Include="../../Sahkku/Assets/Scripts/Rules/**/*.cs" />
-    <!-- Only PlayerAgents.cs, LlmClient.cs and LlmPlayerAgent.cs of the Unity bridge layer are
-         engine-free (ActionSources.cs and RuleSetProvider.cs reach into UnityEngine). -->
+    <!-- Only PlayerAgents.cs, LlmClient.cs, LlmPlayerAgent.cs and LlmConfigFile.cs of the Unity bridge
+         layer are engine-free (ActionSources.cs and RuleSetProvider.cs reach into UnityEngine). -->
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs" />
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmClient.cs" />
     <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmPlayerAgent.cs" />
+    <Compile Include="../../Sahkku/Assets/Scripts/RulesBridge/LlmConfigFile.cs" />
   </ItemGroup>
 
 </Project>

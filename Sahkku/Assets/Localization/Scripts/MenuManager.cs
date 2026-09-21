@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -23,6 +24,12 @@ public class MenuManager : MonoBehaviour
     // Grown the same way: switches player two between the deterministic bot and the LLM NPC.
     private Toggle menLlmToggle;
 
+    // Grown the same way, but as text fields: the endpoint and model the LLM NPC is asked to use. There is
+    // no input field in the scene to copy, so these are built from the even-odds row's graphics (see
+    // AddInputRow). Edited values go straight into GameSettings and out to the shared llm-config.json.
+    private TMP_InputField llmEndpointInput;
+    private TMP_InputField llmModelInput;
+
     /// <summary>The border the options table's label and control columns share, from the panel's middle.</summary>
     const float TableEdgeX = -60.0f;
 
@@ -30,6 +37,16 @@ public class MenuManager : MonoBehaviour
     const float ThrowForStartRowY = -80.0f;
     const float MenStartRowY = -165.0f;
     const float LlmOpponentRowY = -250.0f;
+
+    // The two LLM text fields sit below the play/back buttons, the only room left: the band above the table
+    // holds two 80-tall toggle graphics on an 85 pitch and the table's first row starts 209 below the top.
+    const float LlmEndpointRowY = -950.0f;
+    const float LlmModelRowY = -1015.0f;
+
+    /// <summary>Size of a grown text row. Shorter than the toggle graphic, because it has no labels inside it.</summary>
+    const float InputRowHeight = 56.0f;
+    const float InputRowWidth = 520.0f;
+    const float InputPaddingX = 14.0f;
 
     /// <summary>
     /// How far the authored options table and its play/back buttons are pushed down to make room for the
@@ -39,6 +56,9 @@ public class MenuManager : MonoBehaviour
 
     private void Start()
     {
+        // The menu is the first thing a player sees, so it is where the shared LLM configuration is read:
+        // the two text rows below then show the endpoint and model the NPC will actually be given.
+        GameSettings.LoadLlmConfig();
         AddStartOptions();
         ShowMainMenu();
     }
@@ -107,6 +127,26 @@ public class MenuManager : MonoBehaviour
         Debug.Log("LLM opponent: " + value + " (player two is " + GameSettings.p2AgentType + ")");
     }
 
+    /// <summary>
+    /// Commits the endpoint typed into the options screen. Reached when the field loses focus or the edit is
+    /// submitted, not on every keystroke: the value is stored on <see cref="GameSettings"/> and written to
+    /// the shared llm-config.json, which is what lets the headless benchmark pick up the same endpoint.
+    /// </summary>
+    public void ApplyLlmEndpoint(string value)
+    {
+        GameSettings.llmEndpointUrl = value;
+        bool saved = GameSettings.SaveLlmConfig();
+        Debug.Log("LLM endpoint: " + GameSettings.llmEndpointUrl + (saved ? string.Empty : " (not saved)"));
+    }
+
+    /// <summary>Commits the model name typed into the options screen; see <see cref="ApplyLlmEndpoint"/>.</summary>
+    public void ApplyLlmModel(string value)
+    {
+        GameSettings.llmModelName = value;
+        bool saved = GameSettings.SaveLlmConfig();
+        Debug.Log("LLM model: " + GameSettings.llmModelName + (saved ? string.Empty : " (not saved)"));
+    }
+
     public void ShowMainMenu()
     {
         mainMenuPanel.SetActive(true);
@@ -120,6 +160,7 @@ public class MenuManager : MonoBehaviour
         // The panel is shared by solo and hotseat, so the row is brought in line with the side that was
         // actually chosen (Play Solo / Play Versus) rather than keeping a stale toggle state.
         SyncLlmOpponentRow();
+        SyncLlmFields();
     }
 
     /// <summary>Mirrors player two's agent into the grown row. The handler it triggers is idempotent.</summary>
@@ -128,6 +169,16 @@ public class MenuManager : MonoBehaviour
         if (menLlmToggle == null) return;
         bool llmOpponent = GameSettings.p2AgentType == GameSettings.AgentType.LlmBot;
         if (menLlmToggle.isOn != llmOpponent) menLlmToggle.isOn = llmOpponent;
+    }
+
+    /// <summary>
+    /// Brings the two text rows in line with the settings whenever the panel is shown. The silent setter is
+    /// used so merely opening the screen never looks like an edit to the field.
+    /// </summary>
+    void SyncLlmFields()
+    {
+        if (llmEndpointInput != null) llmEndpointInput.SetTextWithoutNotify(GameSettings.llmEndpointUrl);
+        if (llmModelInput != null) llmModelInput.SetTextWithoutNotify(GameSettings.llmModelName);
     }
 
     public void ToggleAudio(bool value)
@@ -160,13 +211,15 @@ public class MenuManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Adds the grown rows (whether to throw for the start, who starts when that throw is off, and who
-    /// plays player two) to the options screen by copying the existing "even odds" row. Growing the rows at
-    /// runtime keeps every build from having to hand-wire three more scene objects.
+    /// Adds the grown rows to the options screen: whether to throw for the start, who starts when that
+    /// throw is off, who plays player two, and the endpoint and model the LLM NPC is given. The toggles are
+    /// copied from the existing "even odds" row and the text fields are assembled from its graphics, which
+    /// keeps every build from having to hand-wire five more scene objects.
     ///
-    /// They are placed in the free band above the options table rather than appended to the two table
+    /// The toggles are placed in the free band above the options table rather than appended to the two table
     /// columns: those columns are exactly as tall as their four authored rows, so a fifth row would be laid
-    /// out past the bottom of the table and onto the play/back buttons below it.
+    /// out past the bottom of the table and onto the play/back buttons below it. The text fields go in the
+    /// free space below those buttons.
     /// </summary>
     void AddStartOptions()
     {
@@ -187,6 +240,9 @@ public class MenuManager : MonoBehaviour
 
         // A thrown start picks the starting player itself, so the manual choice is not on offer next to it.
         menStartToggle.interactable = !GameSettings.throwForStartingPlayer;
+
+        llmEndpointInput = AddInputRow("LlmEndpoint", "Llm_Endpoint", LlmEndpointRowY, GameSettings.llmEndpointUrl, ApplyLlmEndpoint);
+        llmModelInput = AddInputRow("LlmModel", "Llm_Model", LlmModelRowY, GameSettings.llmModelName, ApplyLlmModel);
     }
 
     /// <summary>
@@ -231,6 +287,120 @@ public class MenuManager : MonoBehaviour
 
         CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Text (TMP)", rowY);
         return toggle;
+    }
+
+    /// <summary>
+    /// Adds an editable text row for a string setting: the localized label in the text column and a one-line
+    /// field in the setting column. The scene has no input field to copy, so the row is assembled from the
+    /// same two graphics the toggle rows reuse — the even-odds row's background image and its label's font.
+    /// <paramref name="onCommitted"/> runs when the field loses focus or the edit is submitted, never on
+    /// every keystroke, so a half-typed URL is not written to the shared file.
+    /// </summary>
+    TMP_InputField AddInputRow(string name, string localizationKey, float rowY, string initialValue, UnityEngine.Events.UnityAction<string> onCommitted)
+    {
+        TMP_InputField input = CreateInputField(name, rowY);
+        if (input != null)
+        {
+            input.SetTextWithoutNotify(initialValue ?? string.Empty);
+            input.onEndEdit.AddListener(onCommitted);
+        }
+
+        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Label (TMP)", rowY);
+        return input;
+    }
+
+    /// <summary>
+    /// Builds the field: an image row with a masked text area holding a copy of the options label as its text
+    /// component. The row is created inactive so the input field is fully wired before its Awake/OnEnable
+    /// runs, which is when TMP sets up the caret and the editing callbacks.
+    /// </summary>
+    TMP_InputField CreateInputField(string name, float rowY)
+    {
+        Transform template = FindLabelTemplate(oddToggle);
+        if (template == null)
+        {
+            Debug.LogWarning("The even-odds label could not be found; the '" + name + "' field has no text.", this);
+            return null;
+        }
+
+        GameObject row = new GameObject(name + "_Input", typeof(RectTransform));
+        row.SetActive(false);
+        row.transform.SetParent(gameOptionsPanel.transform, false);
+        PlaceRowObject(row.transform, new Vector2(0.0f, 0.5f), TableEdgeX, rowY);
+        ((RectTransform)row.transform).sizeDelta = new Vector2(InputRowWidth, InputRowHeight);
+
+        Image background = FindRowBackground(oddToggle);
+        if (background != null && background.sprite != null)
+        {
+            Image image = row.AddComponent<Image>();
+            image.sprite = background.sprite;
+            image.type = background.type;
+            image.color = background.color;
+        }
+
+        GameObject area = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
+        area.transform.SetParent(row.transform, false);
+        RectTransform areaRect = (RectTransform)area.transform;
+        areaRect.anchorMin = Vector2.zero;
+        areaRect.anchorMax = Vector2.one;
+        areaRect.offsetMin = new Vector2(InputPaddingX, 4.0f);
+        areaRect.offsetMax = new Vector2(-InputPaddingX, -4.0f);
+
+        TextMeshProUGUI text = CreateInputText(template, name, areaRect);
+        if (text == null)
+        {
+            // An input field without a text component cannot be typed into; leaving it out beats a field
+            // that throws the first time it is focused.
+            Debug.LogWarning("The '" + name + "' field has no text component; the field is unavailable.", this);
+            Destroy(row);
+            return null;
+        }
+
+        TMP_InputField input = row.AddComponent<TMP_InputField>();
+        input.textViewport = areaRect;
+        input.textComponent = text;
+        input.lineType = TMP_InputField.LineType.SingleLine;
+
+        row.SetActive(true);
+        return input;
+    }
+
+    /// <summary>
+    /// Clones the options label as the field's text — same font and material, stretched over the whole area,
+    /// left-aligned. The clone's localizer is switched off, because the field holds a setting rather than a
+    /// translated title and must keep whatever was typed.
+    /// </summary>
+    static TextMeshProUGUI CreateInputText(Transform template, string name, RectTransform parent)
+    {
+        GameObject label = Instantiate(template.gameObject, parent);
+        label.name = name + "_Text (TMP)";
+        RectTransform rect = (RectTransform)label.transform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        UnityEngine.Localization.Components.LocalizeStringEvent localize =
+            label.GetComponent<UnityEngine.Localization.Components.LocalizeStringEvent>();
+        if (localize != null) localize.enabled = false;
+
+        TextMeshProUGUI text = label.GetComponent<TextMeshProUGUI>();
+        if (text == null) return null;
+
+        text.text = string.Empty;
+        text.alignment = TextAlignmentOptions.MidlineLeft;
+        return text;
+    }
+
+    /// <summary>
+    /// The graphic a grown text row borrows its background from: the even-odds row's own graphic, which is
+    /// the panel sprite behind the checkmarks.
+    /// </summary>
+    static Image FindRowBackground(Toggle source)
+    {
+        if (source == null) return null;
+        Image graphic = source.graphic as Image;
+        return graphic != null ? graphic : source.GetComponentInChildren<Image>();
     }
 
     /// <summary>

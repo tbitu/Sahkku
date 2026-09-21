@@ -147,6 +147,14 @@ MonoBehaviour:
     m_Key: Llm_Opponent
     m_Metadata:
       m_Items: []
+  - m_Id: 900000000024576
+    m_Key: Llm_Endpoint
+    m_Metadata:
+      m_Items: []
+  - m_Id: 900000000028672
+    m_Key: Llm_Model
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:
