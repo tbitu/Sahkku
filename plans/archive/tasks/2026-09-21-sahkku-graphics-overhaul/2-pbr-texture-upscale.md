@@ -5,7 +5,7 @@ task_family_id: pbr-texture-upscale
 sequence_key: "2"
 task_id: 2-pbr-texture-upscale
 title: "PBR Texture Upscale: Curly Birch Board, Reindeer Bone Pieces, and Carved D4 Die"
-status: implementable
+status: archived
 phase: phase2
 target_files:
   - "Sahkku/Assets/Materials/M_Board_basecolor.png"

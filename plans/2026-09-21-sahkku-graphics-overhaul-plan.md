@@ -14,8 +14,8 @@ task_order:
   - 2-pbr-texture-upscale
   - 3-mesh-uv-unification
   - 4-environment-and-backdrop
-active_task_id: 2-pbr-texture-upscale
-last_completed_task_id: 1-pipeline-and-mat-fixes
+active_task_id: 3-mesh-uv-unification
+last_completed_task_id: 2-pbr-texture-upscale
 archive_group: 2026-09-21-sahkku-graphics-overhaul
 task_tracker:
   - task_id: 1-pipeline-and-mat-fixes
@@ -23,8 +23,8 @@ task_tracker:
     status: archived
     notes: "Enable Global Volume post-processing (ACES tonemapping, SSAO, bloom, MSAA), anisotropic filtering, and fix prefab material assignments"
   - task_id: 2-pbr-texture-upscale
-    task_path: plans/tasks/2-pbr-texture-upscale.md
-    status: implementable
+    task_path: plans/archive/tasks/2026-09-21-sahkku-graphics-overhaul/2-pbr-texture-upscale.md
+    status: archived
     notes: "Author 2K/4K PBR texture maps (curly birch wood, polished antler/bone, engraved D4 markings, proper smoothness/roughness and normal maps)"
   - task_id: 3-mesh-uv-unification
     task_path: null
@@ -116,7 +116,7 @@ Elevate the visual presentation of Sáhkku from flat, low-poly placeholder graph
 | Task ID | Task Path | Purpose | Depends On | Closes Gap | Status |
 |---|---|---|---|---|---|
 | `1-pipeline-and-mat-fixes` | `plans/archive/tasks/2026-09-21-sahkku-graphics-overhaul/1-pipeline-and-mat-fixes.md` | Activate URP Global Volume (ACES tonemapping, bloom, SSAO), configure 4x MSAA / 16x anisotropic filtering, fix `KingBone`/`QueenBone` prefab material assignments, and fix bone/stone selection materials. | N/A | Lighting blowout, aliasing, and broken prefab material bindings | archived |
-| `2-pbr-texture-upscale` | `plans/tasks/2-pbr-texture-upscale.md` | Author 2K/4K PBR texture maps (albedo, normal, smoothness, occlusion) for curly birch board, reindeer bone pieces, and carved D4 dice without texture seams. | `1-pipeline-and-mat-fixes` | Flat yellow placeholder look, missing roughness/normal detail, and D4 seam | implementable |
+| `2-pbr-texture-upscale` | `plans/archive/tasks/2026-09-21-sahkku-graphics-overhaul/2-pbr-texture-upscale.md` | Author 2K/4K PBR texture maps (albedo, normal, smoothness, occlusion) for curly birch board, reindeer bone pieces, and carved D4 dice without texture seams. | `1-pipeline-and-mat-fixes` | Flat yellow placeholder look, missing roughness/normal detail, and D4 seam | archived |
 | `3-mesh-uv-unification` | `plans/tasks/2026-09-21-sahkku-graphics-overhaul/3-mesh-uv-unification.md` | Add chamfered edge bevels to `Board.fbx` and piece models; unify multi-channel UV layouts (`UVMap_base` and `AO`) into single clean UV0 mapping. | `2-pbr-texture-upscale` | Sharp low-poly computational silhouettes and multi-UV occlusion artifacts | not_created |
 | `4-environment-and-backdrop` | `plans/tasks/2026-09-21-sahkku-graphics-overhaul/4-environment-and-backdrop.md` | Replace raw 2D outdoor photo ground plane with a cohesive PBR tabletop or tundra slate slab with matching dynamic shadows and camera depth-of-field. | `3-mesh-uv-unification` | Background scale mismatch, baked lighting conflict, and scene immersion | not_created |
 
