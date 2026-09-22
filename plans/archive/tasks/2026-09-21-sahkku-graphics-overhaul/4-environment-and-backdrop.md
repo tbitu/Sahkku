@@ -5,7 +5,7 @@ task_family_id: environment-and-backdrop
 sequence_key: "4"
 task_id: 4-environment-and-backdrop
 title: "Environment and Backdrop Presentation: PBR Tabletop Slate Ground Plane and Lighting Alignment"
-status: implementable
+status: archived
 phase: phase4
 target_files:
   - "Sahkku/Assets/Materials/Ground.mat"
