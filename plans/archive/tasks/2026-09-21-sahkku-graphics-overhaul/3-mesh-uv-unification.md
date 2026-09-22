@@ -5,7 +5,7 @@ task_family_id: mesh-uv-unification
 sequence_key: "3"
 task_id: 3-mesh-uv-unification
 title: "Mesh Refinement, Edge Beveling, and UV Channel Consolidation"
-status: implementable
+status: archived
 phase: phase3
 target_files:
   - "Sahkku/Assets/Models/Board.fbx"
