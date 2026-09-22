@@ -30,6 +30,9 @@ public class MenuManager : MonoBehaviour
     private TMP_InputField llmEndpointInput;
     private TMP_InputField llmModelInput;
 
+    /// <summary>The string table every grown label is localized from.</summary>
+    const string LocalizationTable = "UI_Text";
+
     /// <summary>The border the options table's label and control columns share, from the panel's middle.</summary>
     const float TableEdgeX = -60.0f;
 
@@ -234,15 +237,15 @@ public class MenuManager : MonoBehaviour
         // given room of its own first.
         MakeRoomForLlmRow();
 
-        AddOptionRow("ThrowForStart", "Throw_For_Start", ThrowForStartRowY, GameSettings.throwForStartingPlayer, ToggleThrowForStart);
-        menStartToggle = AddOptionRow("MenStart", "Men_Start", MenStartRowY, GameSettings.startingPlayer == GameSettings.Player.Two, ToggleMenStart);
-        menLlmToggle = AddOptionRow("LlmOpponent", "Llm_Opponent", LlmOpponentRowY, GameSettings.p2AgentType == GameSettings.AgentType.LlmBot, ToggleLlmOpponent);
+        AddOptionRow("ThrowForStart", "Throw_For_Start", ThrowForStartRowY, "Throw for start", GameSettings.throwForStartingPlayer, ToggleThrowForStart);
+        menStartToggle = AddOptionRow("MenStart", "Men_Start", MenStartRowY, "Men start", GameSettings.startingPlayer == GameSettings.Player.Two, ToggleMenStart);
+        menLlmToggle = AddOptionRow("LlmOpponent", "Llm_Opponent", LlmOpponentRowY, "LLM Opponent", GameSettings.p2AgentType == GameSettings.AgentType.LlmBot, ToggleLlmOpponent);
 
         // A thrown start picks the starting player itself, so the manual choice is not on offer next to it.
         menStartToggle.interactable = !GameSettings.throwForStartingPlayer;
 
-        llmEndpointInput = AddInputRow("LlmEndpoint", "Llm_Endpoint", LlmEndpointRowY, GameSettings.llmEndpointUrl, ApplyLlmEndpoint);
-        llmModelInput = AddInputRow("LlmModel", "Llm_Model", LlmModelRowY, GameSettings.llmModelName, ApplyLlmModel);
+        llmEndpointInput = AddInputRow("LlmEndpoint", "Llm_Endpoint", LlmEndpointRowY, "Endpoint", GameSettings.llmEndpointUrl, ApplyLlmEndpoint);
+        llmModelInput = AddInputRow("LlmModel", "Llm_Model", LlmModelRowY, "Model", GameSettings.llmModelName, ApplyLlmModel);
     }
 
     /// <summary>
@@ -274,9 +277,10 @@ public class MenuManager : MonoBehaviour
     /// Copies a row of the options table: the "even odds" toggle against the setting column's edge, whose
     /// label is against the text column's edge. The table is 692 wide with a 200-wide text column and a
     /// 320-wide setting column, both centred in it, so the edge the two columns share is 60 left of the
-    /// panel's middle. Returns the new toggle.
+    /// panel's middle. <paramref name="fallbackText"/> stands in for the label until its entry is loaded.
+    /// Returns the new toggle.
     /// </summary>
-    Toggle AddOptionRow(string name, string localizationKey, float rowY, bool initialValue, UnityEngine.Events.UnityAction<bool> onChanged)
+    Toggle AddOptionRow(string name, string localizationKey, float rowY, string fallbackText, bool initialValue, UnityEngine.Events.UnityAction<bool> onChanged)
     {
         Toggle toggle = Instantiate(oddToggle, gameOptionsPanel.transform);
         toggle.name = name + "_Toggle";
@@ -285,7 +289,7 @@ public class MenuManager : MonoBehaviour
         toggle.isOn = initialValue;                       // ... so setting the start state stays silent
         toggle.onValueChanged.AddListener(onChanged);
 
-        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Text (TMP)", rowY);
+        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Text (TMP)", rowY, fallbackText);
         return toggle;
     }
 
@@ -296,7 +300,7 @@ public class MenuManager : MonoBehaviour
     /// <paramref name="onCommitted"/> runs when the field loses focus or the edit is submitted, never on
     /// every keystroke, so a half-typed URL is not written to the shared file.
     /// </summary>
-    TMP_InputField AddInputRow(string name, string localizationKey, float rowY, string initialValue, UnityEngine.Events.UnityAction<string> onCommitted)
+    TMP_InputField AddInputRow(string name, string localizationKey, float rowY, string fallbackText, string initialValue, UnityEngine.Events.UnityAction<string> onCommitted)
     {
         TMP_InputField input = CreateInputField(name, rowY);
         if (input != null)
@@ -305,7 +309,7 @@ public class MenuManager : MonoBehaviour
             input.onEndEdit.AddListener(onCommitted);
         }
 
-        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Label (TMP)", rowY);
+        CopyLabel(oddToggle, gameOptionsPanel.transform, localizationKey, name + "_Label (TMP)", rowY, fallbackText);
         return input;
     }
 
@@ -423,8 +427,14 @@ public class MenuManager : MonoBehaviour
     /// Mirrors the label of a copied control. The options screen keeps its labels in a separate column from
     /// its controls, so the label has to be copied out of that column; it is right-aligned against the same
     /// edge as the column's own labels.
+    ///
+    /// The label is localized by its copied <c>LocalizeStringEvent</c> rather than by a lookup here: Unity
+    /// Localization reads its tables from Addressables, and on WebGL that can only happen asynchronously, so
+    /// asking the database for a string on start-up would throw and leave the whole menu half-built. The
+    /// readable <paramref name="fallbackText"/> covers the label until the entry arrives, and the localizer
+    /// then keeps it in step with the selected language on its own.
     /// </summary>
-    static void CopyLabel(Toggle source, Transform panel, string localizationKey, string labelName, float rowY)
+    static void CopyLabel(Toggle source, Transform panel, string localizationKey, string labelName, float rowY, string fallbackText)
     {
         Transform template = FindLabelTemplate(source);
         if (template == null)
@@ -437,18 +447,20 @@ public class MenuManager : MonoBehaviour
         label.name = labelName;
         PlaceRowObject(label.transform, new Vector2(1.0f, 0.5f), TableEdgeX, rowY);
 
-        UnityEngine.Localization.Components.LocalizeStringEvent localize =
-            label.GetComponent<UnityEngine.Localization.Components.LocalizeStringEvent>();
-        if (localize != null)
-        {
-            localize.enabled = false;
-        }
-
         TMPro.TextMeshProUGUI text = label.GetComponent<TMPro.TextMeshProUGUI>();
         if (text != null)
         {
-            text.text = UnityEngine.Localization.Settings.LocalizationSettings.StringDatabase
-                .GetLocalizedString("UI_Text", localizationKey);
+            text.text = fallbackText;
+        }
+
+        UnityEngine.Localization.Components.LocalizeStringEvent localize =
+            label.GetComponent<UnityEngine.Localization.Components.LocalizeStringEvent>();
+        if (localize != null && localize.StringReference != null)
+        {
+            // Pointing the localizer at this row's own entry is what starts the asynchronous read; the
+            // component stays enabled so the label follows a change of language too.
+            localize.StringReference.SetReference(LocalizationTable, localizationKey);
+            localize.enabled = true;
         }
     }
 
