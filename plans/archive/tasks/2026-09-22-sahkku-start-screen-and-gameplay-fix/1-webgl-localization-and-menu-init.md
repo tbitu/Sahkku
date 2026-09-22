@@ -5,7 +5,7 @@ task_family_id: webgl-localization-and-menu-init
 sequence_key: "1"
 task_id: 1-webgl-localization-and-menu-init
 title: "Fix WebGL Addressables Localization and Author Scene Menu Hierarchy"
-status: in_progress
+status: archived
 phase: phase1
 target_files:
   - "Sahkku/Assets/Scenes/MainMenu.unity"
