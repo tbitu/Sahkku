@@ -22,7 +22,7 @@ task_tracker:
     notes: "Replace unsupported Task.Delay in GameLogic with WebGL-compatible frame-time pacing, fix LocaleSwitcher frame-0 synchronous locale loading, and harden bot reply timeouts"
   - task_id: 2-interaction-and-gameplay-flow
     task_path: plans/tasks/2-interaction-and-gameplay-flow.md
-    status: not_created
+    status: approved
     notes: "Fix board destination place raycasting/layer-masking, add turn-pass/reroll UI clarity, and verify with automated Playwright browser tests"
 ---
 
