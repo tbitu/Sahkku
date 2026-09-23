@@ -17,7 +17,9 @@ namespace Sahkku.Rules.Bridge
     /// index outside the legal list, or a re-roll that is not on offer. All of them log once and fall back
     /// to the deterministic <see cref="HeuristicPlayerAgent"/>. A <see cref="OperationCanceledException"/>
     /// for the *caller's* token is the one exception, because that is the match ending rather than the
-    /// model failing.
+    /// model failing. The awaits capture the caller's context rather than using
+    /// <c>ConfigureAwait(false)</c>, because a Unity WebGL player has no ThreadPool worker to resume a
+    /// continuation on.
     /// </summary>
     public sealed class LlmPlayerAgent : IPlayerAgent
     {
@@ -85,9 +87,11 @@ namespace Sahkku.Rules.Bridge
 
                 string prompt = BuildRerollPrompt(state);
                 string requestJson = LlmChatRequest.Build(config, RerollSystemPrompt, prompt);
-                string responseJson = await transport
-                    .PostChatCompletionAsync(config.EndpointUrl, requestJson, cancellationToken)
-                    .ConfigureAwait(false);
+                // No ConfigureAwait(false): a Unity WebGL player has no ThreadPool worker, so a
+                // continuation scheduled there is never run and the request would hang until the
+                // controller's own timeout. Capturing the context keeps the answer — or the failure —
+                // on the main thread that is awaiting it.
+                string responseJson = await transport.PostChatCompletionAsync(config.EndpointUrl, requestJson, cancellationToken);
 
                 bool reroll;
                 if (LlmResponseParser.TryParseReroll(responseJson, out reroll))
@@ -132,9 +136,9 @@ namespace Sahkku.Rules.Bridge
 
                 string prompt = GameStateFormatter.FormatPromptContext(state, legalMoves) + MoveInstruction;
                 string requestJson = LlmChatRequest.Build(config, MoveSystemPrompt, prompt);
-                string responseJson = await transport
-                    .PostChatCompletionAsync(config.EndpointUrl, requestJson, cancellationToken)
-                    .ConfigureAwait(false);
+                // As above: the continuation has to come back to the awaiting thread, because on WebGL
+                // there is no ThreadPool to run it anywhere else.
+                string responseJson = await transport.PostChatCompletionAsync(config.EndpointUrl, requestJson, cancellationToken);
 
                 int moveIndex;
                 if (LlmResponseParser.TryParseMoveIndex(responseJson, legalMoves.Count, out moveIndex))

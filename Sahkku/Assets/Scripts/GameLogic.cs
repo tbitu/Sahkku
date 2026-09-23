@@ -149,13 +149,27 @@ public class GameLogic : MonoBehaviour
     /// Wires the LLM NPC: the endpoint configuration comes from <see cref="GameSettings"/>, the transport
     /// is this match's own (and therefore disposed with it), and every decision the model cannot answer is
     /// logged and played heuristically instead — see <see cref="LlmPlayerAgent"/>.
+    ///
+    /// Even building the transport can fail on a platform without a usable socket stack, and a bot that
+    /// cannot be created must not be able to take the match down with it: that seat plays the heuristic
+    /// policy instead. The transport joins the match's resource list only once the agent it belongs to
+    /// exists, so a failed creation leaves nothing behind.
     /// </summary>
     IPlayerAgent CreateLlmAgent(PieceOwner owner, string name)
     {
-        LlmConfig config = GameSettings.GetLlmConfig();
-        var transport = new HttpClientLlmTransport(null, config.RequestTimeout);
-        agentResources.Add(transport);
-        return new LlmPlayerAgent(owner, name, transport, config, engine, message => Debug.Log("[LLM] " + message, this));
+        try
+        {
+            LlmConfig config = GameSettings.GetLlmConfig();
+            var transport = new HttpClientLlmTransport(null, config.RequestTimeout);
+            var agent = new LlmPlayerAgent(owner, name, transport, config, engine, message => Debug.Log("[LLM] " + message, this));
+            agentResources.Add(transport);
+            return agent;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("The LLM NPC for " + name + " could not be created (" + exception.Message + "); the heuristic agent plays that seat instead.", this);
+            return new HeuristicPlayerAgent(owner, name, engine);
+        }
     }
 
     GameSettings.AgentType CurrentAgentType()
@@ -335,12 +349,16 @@ public class GameLogic : MonoBehaviour
             }
             return decision;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // The match ended: that is the controller's own contract, not a failure to recover from.
             throw;
         }
         catch (Exception exception)
         {
+            // A platform that cannot do the request at all (WebGL has no socket stack) and a deadline the
+            // transport cancelled on its own both land here: neither is worth losing the match over, so
+            // the deterministic policy answers instead.
             Debug.LogWarning("Agent " + agent.Name + " failed to choose a re-roll (" + exception.Message + "); keeping the dice.", this);
             return HeuristicPlayerAgent.ChooseReroll(engine, state);
         }
@@ -367,12 +385,15 @@ public class GameLogic : MonoBehaviour
             }
             return move;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // The match ended: that is the controller's own contract, not a failure to recover from.
             throw;
         }
         catch (Exception exception)
         {
+            // As in the re-roll path: a transport that cannot reach its endpoint — on WebGL, one whose
+            // socket stack does not exist — costs the match the model's answer, never the turn.
             Debug.LogWarning("Agent " + agent.Name + " failed to choose a move (" + exception.Message + "); playing the heuristic choice.", this);
             return HeuristicPlayerAgent.ChooseMove(engine, state, legalMoves);
         }
@@ -387,12 +408,15 @@ public class GameLogic : MonoBehaviour
         return false;
     }
 
-    /// <summary>True when the agent did not answer within the timeout (humans are never timed out).</summary>
-    async Task<bool> TimedOutAsync(Task pending, CancellationToken cancellationToken)
+    /// <summary>
+    /// True when the agent did not answer within <see cref="agentReplyTimeoutSeconds"/> of frame time
+    /// (humans are never timed out).
+    /// </summary>
+    Task<bool> TimedOutAsync(Task pending, CancellationToken cancellationToken)
     {
-        Task timeout = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0.1f, agentReplyTimeoutSeconds)), cancellationToken);
-        Task finished = await Task.WhenAny(pending, timeout);
-        return finished != pending;
+        // The deadline is polled on the frame clock rather than raced against a timer, so it also holds on
+        // a platform where the timer behind Task.Delay never fires — see <see cref="UnityTimeDelays"/>.
+        return UnityTimeDelays.TimedOutAsync(pending, agentReplyTimeoutSeconds, cancellationToken);
     }
 
     async Task WaitForPresentationAsync(CancellationToken cancellationToken)
@@ -406,14 +430,15 @@ public class GameLogic : MonoBehaviour
         }
     }
 
-    static async Task DelayAsync(float seconds, CancellationToken cancellationToken)
+    /// <summary>
+    /// Paces the match between animations and bot decisions. The wait itself lives in
+    /// <see cref="UnityTimeDelays"/> because it has to be measured in frames: on WebGL the continuation of
+    /// a <see cref="Task.Delay"/> is never resumed, and a match loop that stops at its first delay never
+    /// reaches the move phase at all.
+    /// </summary>
+    static Task DelayAsync(float seconds, CancellationToken cancellationToken)
     {
-        if (seconds <= 0.0f)
-        {
-            await Task.Yield();
-            return;
-        }
-        await Task.Delay(TimeSpan.FromSeconds(seconds), cancellationToken);
+        return UnityTimeDelays.DelayAsync(seconds, cancellationToken);
     }
 
     // ------------------------------------------------------------------ presentation
