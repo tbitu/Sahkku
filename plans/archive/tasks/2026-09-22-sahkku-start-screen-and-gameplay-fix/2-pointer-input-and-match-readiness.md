@@ -5,7 +5,7 @@ task_family_id: pointer-input-and-match-readiness
 sequence_key: "2"
 task_id: 2-pointer-input-and-match-readiness
 title: "Fix Pointer Input Shadowing and Match Controller Presentation Readiness"
-status: implementable
+status: archived
 phase: phase1
 target_files:
   - "Sahkku/Assets/Scripts/GameInteraction.cs"

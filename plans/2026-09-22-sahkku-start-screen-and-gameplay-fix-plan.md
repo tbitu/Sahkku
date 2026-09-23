@@ -13,8 +13,8 @@ task_order:
   - 1-webgl-localization-and-menu-init
   - 2-pointer-input-and-match-readiness
   - 3-playwright-e2e-game-verification
-active_task_id: 2-pointer-input-and-match-readiness
-last_completed_task_id: 1-webgl-localization-and-menu-init
+active_task_id: 3-playwright-e2e-game-verification
+last_completed_task_id: 2-pointer-input-and-match-readiness
 archive_group: 2026-09-22-sahkku-start-screen-and-gameplay-fix
 task_tracker:
   - task_id: 1-webgl-localization-and-menu-init
@@ -22,8 +22,8 @@ task_tracker:
     status: archived
     notes: "Fix WebGL Addressables synchronous localization loading crashes in MenuManager and LocalizedDropdown; set MainMenuPanel active by default in MainMenu.unity"
   - task_id: 2-pointer-input-and-match-readiness
-    task_path: plans/tasks/2-pointer-input-and-match-readiness.md
-    status: implementable
+    task_path: plans/archive/tasks/2026-09-22-sahkku-start-screen-and-gameplay-fix/2-pointer-input-and-match-readiness.md
+    status: archived
     notes: "Fix GameInteraction pointer input shadowing between touch and mouse, eliminate synchronous localization crash in SetupRerollButtons, and ensure match loop readiness"
   - task_id: 3-playwright-e2e-game-verification
     task_path: null
@@ -112,7 +112,7 @@ Specifically:
 | Task ID | Task Path | Purpose | Depends On | Closes Gap | Status |
 |---|---|---|---|---|---|
 | `1-webgl-localization-and-menu-init` | plans/archive/tasks/2026-09-22-sahkku-start-screen-and-gameplay-fix/1-webgl-localization-and-menu-init.md | Fix async localization loading in `MenuManager` and `LocalizedDropdown`, and set `MainMenuPanel` active by default in `MainMenu.unity` | None | Start screen crash, "Option A" dropdowns, scene state discrepancy | archived |
-| `2-pointer-input-and-match-readiness` | plans/tasks/2-pointer-input-and-match-readiness.md | Fix `ReadPointer` mouse/touch coexistence, prevent `SetupRerollButtons` crash, and ensure match loop readiness | `1-webgl-localization-and-menu-init` | Unplayable game, piece selection freeze, missing reroll buttons | implementable |
+| `2-pointer-input-and-match-readiness` | plans/archive/tasks/2026-09-22-sahkku-start-screen-and-gameplay-fix/2-pointer-input-and-match-readiness.md | Fix `ReadPointer` mouse/touch coexistence, prevent `SetupRerollButtons` crash, and ensure match loop readiness | `1-webgl-localization-and-menu-init` | Unplayable game, piece selection freeze, missing reroll buttons | archived |
 | `3-playwright-e2e-game-verification` | null | Implement Playwright E2E test harness in `Tools/PlaywrightTests/` to automate browser verification of menus and gameplay | `2-pointer-input-and-match-readiness` | Automated E2E verification of live/built game function | not_created |
 
 ## Coverage Map
