@@ -26,8 +26,8 @@ task_tracker:
     status: archived
     notes: "Fix GameInteraction pointer input shadowing between touch and mouse, eliminate synchronous localization crash in SetupRerollButtons, and ensure match loop readiness"
   - task_id: 3-playwright-e2e-game-verification
-    task_path: null
-    status: not_created
+    task_path: plans/tasks/3-playwright-e2e-game-verification.md
+    status: implementable
     notes: "Establish dedicated Playwright E2E test harness in Tools/PlaywrightTests/ to verify start menu, options, match start, re-roll, and move execution against WebGL"
 ---
 
@@ -113,7 +113,7 @@ Specifically:
 |---|---|---|---|---|---|
 | `1-webgl-localization-and-menu-init` | plans/archive/tasks/2026-09-22-sahkku-start-screen-and-gameplay-fix/1-webgl-localization-and-menu-init.md | Fix async localization loading in `MenuManager` and `LocalizedDropdown`, and set `MainMenuPanel` active by default in `MainMenu.unity` | None | Start screen crash, "Option A" dropdowns, scene state discrepancy | archived |
 | `2-pointer-input-and-match-readiness` | plans/archive/tasks/2026-09-22-sahkku-start-screen-and-gameplay-fix/2-pointer-input-and-match-readiness.md | Fix `ReadPointer` mouse/touch coexistence, prevent `SetupRerollButtons` crash, and ensure match loop readiness | `1-webgl-localization-and-menu-init` | Unplayable game, piece selection freeze, missing reroll buttons | archived |
-| `3-playwright-e2e-game-verification` | null | Implement Playwright E2E test harness in `Tools/PlaywrightTests/` to automate browser verification of menus and gameplay | `2-pointer-input-and-match-readiness` | Automated E2E verification of live/built game function | not_created |
+| `3-playwright-e2e-game-verification` | plans/tasks/3-playwright-e2e-game-verification.md | Implement Playwright E2E test harness in `Tools/PlaywrightTests/` to automate browser verification of menus and gameplay | `2-pointer-input-and-match-readiness` | Automated E2E verification of live/built game function | implementable |
 
 ## Coverage Map
 
