@@ -1,0 +1,12 @@
+{
+  "name": "sahkku-playwright-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end verification of the Sahkku Unity WebGL build.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
