@@ -4,7 +4,7 @@ artifact_id: task_1_webgl_delay_and_locale_init_v1
 task_family_id: webgl-delay-and-locale-init
 sequence_key: "1"
 task_id: 1-webgl-delay-and-locale-init
-status: done
+status: archived
 phase: implementation
 target_files:
   - Sahkku/Assets/Scripts/GameLogic.cs
@@ -17,6 +17,7 @@ doc_bubble_id: null
 impl_bubble_id: 1-webgl-delay-and-locale-init
 supersedes: []
 superseded_by: null
+archive_group: 2026-09-23-sahkku-webgl-gameplay-and-locale-fix
 ---
 
 # Task 1: Fix WebGL Match Loop Pacing (Task.Delay), LocaleSwitcher Preload, and Bot Timeout Hardening

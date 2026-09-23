@@ -4,7 +4,7 @@ artifact_id: task_2_interaction_and_gameplay_flow_v1
 task_family_id: interaction-and-gameplay-flow
 sequence_key: "2"
 task_id: 2-interaction-and-gameplay-flow
-status: approved
+status: archived
 phase: implementation
 target_files:
   - Sahkku/Assets/Scripts/GameInteraction.cs
@@ -14,9 +14,10 @@ prd_ref: null
 plan_ref: plans/2026-09-23-sahkku-webgl-gameplay-and-locale-fix-plan.md
 system_context_ref: null
 doc_bubble_id: null
-impl_bubble_id: null
+impl_bubble_id: 2-interaction-and-gameplay-flow
 supersedes: []
 superseded_by: null
+archive_group: 2026-09-23-sahkku-webgl-gameplay-and-locale-fix
 ---
 
 # Task 2: Board Interaction, Turn Status Feedback, and Automated E2E Verification

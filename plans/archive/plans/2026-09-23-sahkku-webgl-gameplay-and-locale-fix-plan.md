@@ -4,25 +4,25 @@ artifact_id: plan_sahkku_webgl_gameplay_and_locale_fix_v1
 plan_id: sahkku-webgl-gameplay-and-locale-fix
 created_on: "2026-09-23"
 title: "Fix WebGL Match Loop Pacing (Task.Delay), LocaleSwitcher Preload, and Board Interaction"
-status: in_progress
-plan_status: in_progress
+status: done
+plan_status: done
 prd_ref: null
 owners:
   - "tarjeib"
 task_order:
   - 1-webgl-delay-and-locale-init
   - 2-interaction-and-gameplay-flow
-active_task_id: 2-interaction-and-gameplay-flow
-last_completed_task_id: 1-webgl-delay-and-locale-init
+active_task_id: null
+last_completed_task_id: 2-interaction-and-gameplay-flow
 archive_group: 2026-09-23-sahkku-webgl-gameplay-and-locale-fix
 task_tracker:
   - task_id: 1-webgl-delay-and-locale-init
-    task_path: plans/tasks/1-webgl-delay-and-locale-init.md
-    status: done
+    task_path: plans/archive/tasks/2026-09-23-sahkku-webgl-gameplay-and-locale-fix/1-webgl-delay-and-locale-init.md
+    status: archived
     notes: "Replace unsupported Task.Delay in GameLogic with WebGL-compatible frame-time pacing, fix LocaleSwitcher frame-0 synchronous locale loading, and harden bot reply timeouts"
   - task_id: 2-interaction-and-gameplay-flow
-    task_path: plans/tasks/2-interaction-and-gameplay-flow.md
-    status: approved
+    task_path: plans/archive/tasks/2026-09-23-sahkku-webgl-gameplay-and-locale-fix/2-interaction-and-gameplay-flow.md
+    status: archived
     notes: "Fix board destination place raycasting/layer-masking, add turn-pass/reroll UI clarity, and verify with automated Playwright browser tests"
 ---
 
