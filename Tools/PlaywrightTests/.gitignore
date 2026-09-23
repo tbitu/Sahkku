@@ -1,0 +1,5 @@
+# Dependencies and run output of the Playwright harness: the suite is run with `npm install && npm test`.
+node_modules/
+test-results/
+playwright-report/
+blob-report/

@@ -5,7 +5,7 @@ task_family_id: playwright-e2e-game-verification
 sequence_key: "3"
 task_id: 3-playwright-e2e-game-verification
 title: "Establish Playwright E2E Game Verification Test Suite"
-status: implementable
+status: archived
 phase: phase1
 target_files:
   - "Tools/PlaywrightTests/package.json"
