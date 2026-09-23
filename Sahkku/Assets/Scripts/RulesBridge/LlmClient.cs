@@ -26,6 +26,12 @@ namespace Sahkku.Rules.Bridge
     /// The shipped transport: plain <see cref="HttpClient"/> against any OpenAI-compatible endpoint —
     /// LM Studio (<c>http://localhost:1234/v1/chat/completions</c>), Ollama, or a hosted API. It never
     /// runs on a frame-critical path by itself; the match loop awaits it.
+    ///
+    /// Nothing here is WebGL-specific, which is the point: a WebGL player has no socket stack for
+    /// <see cref="HttpClient"/> to use and no timer for its deadline, so on that platform a request fails
+    /// or simply never comes back. Handling that is the agent's job — every request is awaited behind a
+    /// frame-clock timeout and resolved with the heuristic move — so this class stays a plain transport
+    /// and the desktop, editor and headless callers keep the real thing.
     /// </summary>
     public sealed class HttpClientLlmTransport : ILlmTransport, IDisposable
     {
@@ -56,15 +62,23 @@ namespace Sahkku.Rules.Bridge
             // not be reconfigured by a transport that does not own it. A deadline that fires cancels the
             // *linked* token only, so the agent can tell "the model was too slow" (a failure it recovers
             // from) apart from "the match was cancelled" (an exception it rethrows).
+            //
+            // CancelAfter is a timer, and a Unity WebGL player has no timer pump: the deadline simply never
+            // fires there. The bound on a WebGL request is the caller's own timeout instead (the match loop
+            // polls it on the frame clock), and the agent's fallback is the same either way.
+            //
+            // Both awaits below capture the caller's context rather than using ConfigureAwait(false): a
+            // continuation queued to the ThreadPool is never run on WebGL, so the response (or the failure)
+            // would never reach the agent that is waiting for it.
             using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
                 if (RequestTimeout > TimeSpan.Zero) deadline.CancelAfter(RequestTimeout);
 
                 using (var content = new StringContent(requestJson ?? "{}", Encoding.UTF8, "application/json"))
-                using (HttpResponseMessage response = await httpClient.PostAsync(endpointUrl, content, deadline.Token).ConfigureAwait(false))
+                using (HttpResponseMessage response = await httpClient.PostAsync(endpointUrl, content, deadline.Token))
                 {
                     response.EnsureSuccessStatusCode();
-                    return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    return await response.Content.ReadAsStringAsync();
                 }
             }
         }
