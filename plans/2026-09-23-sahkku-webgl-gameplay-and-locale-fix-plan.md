@@ -12,12 +12,13 @@ owners:
 task_order:
   - 1-webgl-delay-and-locale-init
   - 2-interaction-and-gameplay-flow
-active_task_id: 1-webgl-delay-and-locale-init
+active_task_id: 2-interaction-and-gameplay-flow
+last_completed_task_id: 1-webgl-delay-and-locale-init
 archive_group: 2026-09-23-sahkku-webgl-gameplay-and-locale-fix
 task_tracker:
   - task_id: 1-webgl-delay-and-locale-init
     task_path: plans/tasks/1-webgl-delay-and-locale-init.md
-    status: draft
+    status: done
     notes: "Replace unsupported Task.Delay in GameLogic with WebGL-compatible frame-time pacing, fix LocaleSwitcher frame-0 synchronous locale loading, and harden bot reply timeouts"
   - task_id: 2-interaction-and-gameplay-flow
     task_path: plans/tasks/2-interaction-and-gameplay-flow.md

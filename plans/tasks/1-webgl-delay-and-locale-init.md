@@ -4,7 +4,7 @@ artifact_id: task_1_webgl_delay_and_locale_init_v1
 task_family_id: webgl-delay-and-locale-init
 sequence_key: "1"
 task_id: 1-webgl-delay-and-locale-init
-status: approved
+status: done
 phase: implementation
 target_files:
   - Sahkku/Assets/Scripts/GameLogic.cs
@@ -14,7 +14,7 @@ prd_ref: null
 plan_ref: plans/2026-09-23-sahkku-webgl-gameplay-and-locale-fix-plan.md
 system_context_ref: null
 doc_bubble_id: null
-impl_bubble_id: null
+impl_bubble_id: 1-webgl-delay-and-locale-init
 supersedes: []
 superseded_by: null
 ---
