@@ -17,7 +17,8 @@ const { test, expect } = require('@playwright/test');
  *     call actually took effect is asserted on the rendered frame, not on the call's return value:
  *     `SendMessage` reports nothing back, and a wrong name only produces a console warning.
  *  3. The canvas can be read back with `drawImage` inside the frame it was drawn in, which is what
- *     tells a rendering player apart from a blank or frozen one.
+ *     tells a rendering player apart from a blank one; watching it change over a whole turn is what
+ *     tells a match being played apart from a match loop stopped at a wait it never came back from.
  *
  * Unity renders its UI into the canvas, so its strings ("Play Solo", the piece-model dropdown
  * entries) are pixels rather than DOM text and cannot be asserted on directly from outside the
@@ -29,8 +30,20 @@ const { test, expect } = require('@playwright/test');
 /** Set by the harness on the Unity instance the loader creates; see {@link captureUnityInstance}. */
 const UNITY_INSTANCE = '__SAHKKU_UNITY_INSTANCE__';
 
+/**
+ * The scene's one gameplay GameObject ("Game" in `Game.unity`): it carries both the match controller and
+ * the board's interaction component, so it is the target for anything the suite drives in a match.
+ */
+const GAME_OBJECT = 'Game';
+
 /** The WebGL Player refuses synchronous Addressables loads and logs this when one is attempted. */
 const SYNC_ADDRESSABLE_FAILURE = /does not support synchronous Addressable loading/i;
+
+/** The call the player names in that failure — and the one no other code path may reach either. */
+const BLOCKING_WAIT = /WaitForCompletion/;
+
+/** Unity Localization reads its tables from Addressables: a locale read before initialization throws. */
+const LOCALE_PRELOAD_FAILURE = /Locales PreloadOperation has not been initialized/i;
 
 /** Any unhandled exception the player prints: the match-readiness regression surfaces as one. */
 const UNHANDLED_EXCEPTION = /(^|\n|\s)(Exception|Error): /;
@@ -49,6 +62,21 @@ const MIN_DRAWN_RATIO = 0.05;
 
 /** Fraction of the frame that must change for a view to count as a different view. */
 const MIN_VIEW_CHANGE = 0.02;
+
+/** How long one turn of a match is watched for. Roll, settle, think and move take a few seconds. */
+const TURN_ACTIVITY_WINDOW = 15000;
+
+/** How often the canvas is sampled while a turn is being watched. */
+const TURN_ACTIVITY_INTERVAL = 750;
+
+/**
+ * How many of those samples have to differ from the one before for the player to count as still playing.
+ *
+ * One change is the throw the turn opens with, which a player parked on its first frame-time wait still
+ * draws before it stops; several spread over a whole turn are the animations, the piece moving and the
+ * banner changing. A parked match loop leaves the same picture on screen and scores nothing.
+ */
+const MIN_TURN_CHANGES = 3;
 
 /** One console recorder per page, shared by the tests and the failure hook that reports it. */
 const runtimeByPage = new WeakMap();
@@ -89,6 +117,11 @@ test('cold launch renders the main menu without synchronous Addressable loading'
   // The invariant this task exists for: no startup path may read an Addressables table
   // synchronously. On WebGL that throws, and the menu is left half-built behind it.
   expectSyncAddressablesFailure(runtime, 'cold launch');
+
+  // The locale system loads its own tables through Addressables, so a read of a locale before the
+  // preload finished is the same class of failure one step earlier in start-up.
+  expectNoLocalePreloadFailure(runtime, 'cold launch');
+  expectNoBlockingWait(runtime, 'cold launch');
 });
 
 test('Play Solo reaches the options screen', async ({ page }) => {
@@ -138,6 +171,77 @@ test('starting a match loads the board and keeps the player responsive', async (
 
   expectSyncAddressablesFailure(runtime, 'starting a match');
   expectNoUnhandledException(runtime, 'starting a match');
+});
+
+test('a match with the men starting plays out the bot turn instead of hanging on thinking', async ({ page }) => {
+  const runtime = runtimeFor(page);
+
+  await bootPlayer(page, runtime);
+  await sendToUnity(page, 'MenuManager', 'PlaySolo');
+  const options = await waitForRenderedFrame(page);
+
+  // The men are player two, and "Play Solo" hands that side to the bot, so this is the match that opens on
+  // a turn nobody can advance by hand: the dice settle, the bot thinks, and the piece it picked moves. A
+  // loop parked on a wait that never resumes gets as far as the dice animation and stops there.
+  await startMatchWith(page, runtime, 1, 'Two');
+  await expectViewChange(page, options, 'the match board');
+  await expectBoardRendering(page, 'the match board');
+
+  const activity = await watchTurnActivity(page);
+  expect(
+    activity.changes,
+    `the player stopped drawing while the men's turn was playing out (${activity.changes} of ${activity.samples.length} samples changed); the match loop is parked`,
+  ).toBeGreaterThanOrEqual(MIN_TURN_CHANGES);
+  expect(activity.last.nonBlankRatio, "the player stopped drawing after the bot's turn").toBeGreaterThan(
+    MIN_DRAWN_RATIO,
+  );
+
+  expectSyncAddressablesFailure(runtime, "a match with the men starting");
+  expectNoLocalePreloadFailure(runtime, "a match with the men starting");
+  expectNoBlockingWait(runtime, "a match with the men starting");
+  expectNoUnhandledException(runtime, "a match with the men starting");
+});
+
+test('a match with the women starting answers the human turn', async ({ page }) => {
+  const runtime = runtimeFor(page);
+
+  await bootPlayer(page, runtime);
+  await sendToUnity(page, 'MenuManager', 'PlaySolo');
+  const options = await waitForRenderedFrame(page);
+
+  // The women are player one, and "Play Solo" keeps that side for the human: the dice are thrown for the
+  // player, and the turn that follows is theirs — the re-roll question first, then a piece and a place.
+  await startMatchWith(page, runtime, 0, 'One');
+  await expectViewChange(page, options, 'the match board');
+  await expectBoardRendering(page, 'the match board');
+
+  // Nothing is asserted here about the canvas still changing: a turn the human owns is *supposed* to go
+  // quiet and wait for them, so their seat is checked the other way round — by what their input does.
+  // The baseline is taken once the throw has settled, so a difference afterwards is the answer to the
+  // clicks and not the tail of an animation that would have played anyway.
+  await page.waitForTimeout(2500);
+  const before = await expectBoardRendering(page, 'the settled board');
+
+  // A turn played the way the player would play it: browser pointer events on the canvas, which is the
+  // path the pieces and the two re-roll buttons are both read through. The sweep covers the board and the
+  // row the buttons are grown in; which point lands on a piece or a button is not asserted, since a click
+  // on a piece with no move and a click on empty board are both no-ops by rule.
+  await clickCanvasGrid(page);
+
+  // And the re-roll question's other answer, through the same bridge its button reaches: `KeepDice` keeps
+  // the dice when the question is open and does nothing when the turn has already moved on.
+  await sendToUnity(page, GAME_OBJECT, 'KeepDice');
+
+  const after = await expectBoardRendering(page, 'the board after the human turn was answered');
+  expect(
+    changedFraction(before, after),
+    'a turn of clicks and a re-roll answer left the board exactly as it was; the human seat is not answering',
+  ).toBeGreaterThan(MIN_VIEW_CHANGE);
+
+  expectSyncAddressablesFailure(runtime, 'a match with the women starting');
+  expectNoLocalePreloadFailure(runtime, 'a match with the women starting');
+  expectNoBlockingWait(runtime, 'a match with the women starting');
+  expectNoUnhandledException(runtime, 'a match with the women starting');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -243,6 +347,26 @@ async function sendToUnity(page, gameObject, method, value) {
   expect(result.error, `${gameObject}.${method} was rejected by the player`).toBeUndefined();
 }
 
+/**
+ * Starts a solo match with a chosen starting player (1 = the men / player two, 0 = the women / player one).
+ *
+ * `MenuManager.SetStartingPlayer` is the method the options screen's "men start" row calls, so the match is
+ * configured the way that row configures it without clicking a control whose position on screen is the
+ * scene's business. The menu prints the side it just stored, and that line is what confirms the argument
+ * arrived: a call that never reached the player is then reported as itself rather than as a broken match.
+ */
+async function startMatchWith(page, runtime, startingPlayer, name) {
+  await sendToUnity(page, 'MenuManager', 'SetStartingPlayer', startingPlayer);
+  await expect
+    .poll(() => runtime.entries.some((entry) => entry.text.includes(`Starting player: ${name}`)), {
+      timeout: TRANSITION_TIMEOUT,
+      message: `the menu never stored "${name}" as the starting player`,
+    })
+    .toBe(true);
+
+  await sendToUnity(page, 'MenuManager', 'StartGame');
+}
+
 // ---------------------------------------------------------------------------------------------
 // Frame inspection
 // ---------------------------------------------------------------------------------------------
@@ -302,6 +426,37 @@ async function waitForRenderedFrame(page, { attempts = 20 } = {}) {
   return frame;
 }
 
+/** Waits for a scene to draw, and fails with its name when what is on screen is still an empty frame. */
+async function expectBoardRendering(page, what) {
+  const frame = await waitForRenderedFrame(page);
+  expect(frame.nonBlankRatio, `${what} is blank; the player is not drawing it`).toBeGreaterThan(MIN_DRAWN_RATIO);
+  return frame;
+}
+
+/**
+ * Watches the canvas for a whole turn and reports how often it changed.
+ *
+ * The harness has no game-side hook to read the match loop's progress with, so it uses the signal the
+ * player cannot help producing while it is playing: the throw, the pieces moving and the status banner
+ * changing all redraw the canvas, turn after turn. A loop parked on a wait that never resumes draws the
+ * frame it stopped on and nothing after it — which is what watching a whole turn tells apart from a match
+ * that is being played. `changes` is what the tests assert on; `last` is the frame the watch ended on.
+ */
+async function watchTurnActivity(page, { windowMs = TURN_ACTIVITY_WINDOW, intervalMs = TURN_ACTIVITY_INTERVAL } = {}) {
+  const samples = [];
+  let previous = await readCanvas(page);
+  const deadline = Date.now() + windowMs;
+
+  do {
+    await page.waitForTimeout(intervalMs);
+    const current = await readCanvas(page);
+    samples.push(changedFraction(previous, current) > MIN_VIEW_CHANGE);
+    previous = current;
+  } while (Date.now() < deadline);
+
+  return { samples, changes: samples.filter(Boolean).length, last: previous };
+}
+
 /** Asserts that the player moved to another view, rather than sitting on the one it was showing. */
 async function expectViewChange(page, before, what) {
   await expect
@@ -331,6 +486,24 @@ async function clickCanvas(page, xFraction, yFraction) {
   const box = await page.locator('#unity-canvas').boundingBox();
   if (!box) throw new Error('the page has no visible #unity-canvas to click');
   await page.mouse.click(box.x + box.width * xFraction, box.y + box.height * yFraction);
+}
+
+/**
+ * Clicks a grid of points across the canvas, with real browser pointer events.
+ *
+ * The board and the two re-roll buttons sit in the middle and along the bottom of the frame (the buttons
+ * are grown at run time, so the scene does not pin them there), so the sweep covers both. Which point
+ * lands on a movable piece or on a button is not asserted: the clicks exist to drive the input path the
+ * player ships with — pieces on the board, and the buttons that answer the re-roll question — during a turn
+ * the human owns.
+ */
+async function clickCanvasGrid(page) {
+  for (const y of [0.3, 0.45, 0.6, 0.85]) {
+    for (const x of [0.3, 0.41, 0.5, 0.59, 0.7]) {
+      await clickCanvas(page, x, y);
+      await page.waitForTimeout(200);
+    }
+  }
 }
 
 /** The text of the template's error banner; the template styles a load failure bright red. */
@@ -396,11 +569,26 @@ function expectSyncAddressablesFailure(runtime, when) {
   ).toEqual([]);
 }
 
+/** Asserts the player never reached a call that waits for a load: on WebGL none of them can return. */
+function expectNoBlockingWait(runtime, when) {
+  expectNoFailureMatching(runtime, BLOCKING_WAIT, `the player waited for a load to finish while ${when}`);
+}
+
+/** Asserts no locale table was read before the localization system had finished initializing. */
+function expectNoLocalePreloadFailure(runtime, when) {
+  expectNoFailureMatching(runtime, LOCALE_PRELOAD_FAILURE, `the player read a locale before it was preloaded while ${when}`);
+}
+
 /** Asserts the player did not throw on its way through a state: a thrown exception stops the game. */
 function expectNoUnhandledException(runtime, when) {
-  const exceptions = runtime.failures().filter((entry) => UNHANDLED_EXCEPTION.test(entry.text));
+  expectNoFailureMatching(runtime, UNHANDLED_EXCEPTION, `the player logged an unhandled exception while ${when}`);
+}
+
+/** The shared body of the console assertions: which failures were logged, and what each one means. */
+function expectNoFailureMatching(runtime, pattern, description) {
+  const failures = runtime.failures().filter((entry) => pattern.test(entry.text));
   expect(
-    exceptions.map((entry) => entry.text),
-    `the player logged an unhandled exception while ${when}:\n${exceptions.map((entry) => entry.text).join('\n')}`,
+    failures.map((entry) => entry.text),
+    `${description}:\n${failures.map((entry) => entry.text).join('\n')}`,
   ).toEqual([]);
 }

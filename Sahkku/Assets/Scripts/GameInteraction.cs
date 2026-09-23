@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.EnhancedTouch;
 using UnityEngine.Localization;
@@ -73,6 +74,12 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     const string KeepKey = "Keep_Die";
     const string ThinkingKey = "Thinking";
 
+    // What the status line says while a turn is being handed over because nothing on the board can spend
+    // the throw that is lying there. The wording lives in the scene, like the re-roll buttons' fallback
+    // labels: no string-table entry exists for it yet, and reading a missing one would only leave the key
+    // itself (or a warning per load) where the player expects a sentence.
+    const string TurnHandoverText = "No move possible — turn passes";
+
     List<GameObject> places = new List<GameObject>();
     List<GameObject> p1Soldiers = new List<GameObject>();
     List<GameObject> p2Soldiers = new List<GameObject>();
@@ -109,6 +116,19 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     TaskCompletionSource<RerollDecision> rerollDecision;
     TaskCompletionSource<Move> pendingMove;
     IReadOnlyList<Move> pendingLegalMoves;
+
+    // The piece a human pointed at while the re-roll question was open. Clicking a movable piece answers
+    // that question ("keep the dice"), and the piece the click chose is the piece the move phase it opens
+    // is about; so the pick is carried across the hand-over. The view and the rules piece it stands for are
+    // both kept, and checked against each other when the pick is used, so a board re-render in between can
+    // never turn the click into a different piece.
+    PieceData pieceKeptWithDice;
+    Piece pieceKeptWithDiceInfo;
+
+    // The status line normally follows the turn phase; a notice stands in for it for a moment (see
+    // ShowTurnHandoverNotice). Both are measured against the same frame clock the match loop paces with.
+    string statusNotice;
+    float statusNoticeUntil;
 
     // The registration that cancels a pending decision when the match ends. It is released as soon as the
     // decision settles, so a whole match does not accumulate one registration per decision.
@@ -199,6 +219,12 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         ReleaseCancellation(ref rerollCancellation);
         rerollDecision = NewCompletion<RerollDecision>();
         ShowRerollButtons(true);
+
+        // The dice on the table already decide which pieces may move, and a click on one of those pieces is
+        // an answer to this question, so the board shows them as selectable while it is open. Reading that
+        // from the rules is the controller's half of the work — the board never re-derives a rule itself.
+        GameLogic.Instance.RefreshMovablePieces();
+
         rerollCancellation = RegisterCancellation(rerollDecision, cancellationToken);
         return rerollDecision.Task;
     }
@@ -211,6 +237,11 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         pendingMove = NewCompletion<Move>();
         ShowRerollButtons(false);
         UpdatePieces();
+
+        // A click that answered the re-roll question with a piece chose the whole decision. The move phase
+        // opens with that piece selected, so the one click both answered the question and picked the piece.
+        SelectPieceKeptWithDice();
+
         moveCancellation = RegisterCancellation(pendingMove, cancellationToken);
         return pendingMove.Task;
     }
@@ -296,6 +327,37 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
             if (candidate.pieceId == move.pieceId && candidate.targetPlaceIndex == move.targetPlaceIndex) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Selects the piece a human picked while answering the re-roll question — but only while the pick still
+    /// means that piece, and only while the dice on the table can still move it. The pick is consumed either
+    /// way: it belongs to the one move phase the click that made it opened.
+    /// </summary>
+    void SelectPieceKeptWithDice()
+    {
+        PieceData view = pieceKeptWithDice;
+        Piece piece = pieceKeptWithDiceInfo;
+        pieceKeptWithDice = null;
+        pieceKeptWithDiceInfo = null;
+
+        if (view == null || piece == null || view.pieceInfo != piece || !piece.IsSelectable()) return;
+        SelectPiece(view);
+    }
+
+    /// <summary>
+    /// Marks <paramref name="data"/> as the piece being moved and shows where it may go. Selecting decides
+    /// nothing: the destinations are the piece's own <see cref="Piece.allowedPlaces"/>, which only the rules
+    /// engine fills in.
+    /// </summary>
+    void SelectPiece(PieceData data)
+    {
+        selectedPiece = data;
+        UpdatePieces();
+        for (int i = 0; i < places.Count; ++i)
+        {
+            places[i].SetActive(data.pieceInfo.allowedPlaces.Contains(i));
+        }
     }
 
     /// <summary>
@@ -424,6 +486,15 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
             return;
         }
 
+        // A notice about a turn being handed over outranks the phase banner: it is on the line to explain
+        // why that banner is about to change, and the dice it is about are still on the table under it.
+        if (statusNotice != null && Time.time < statusNoticeUntil)
+        {
+            gameStatus.text = statusNotice;
+            return;
+        }
+        statusNotice = null;
+
         switch (GameLogic.Instance.turnPhase)
         {
             case TurnPhase.P1roll:
@@ -457,6 +528,18 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     string Localize(string key)
     {
         return statusText.TryGetValue(key, out string text) ? text : key;
+    }
+
+    /// <summary>
+    /// Puts the reason a turn is being handed over without a move on the status line, and keeps it there
+    /// while the match loop paces that hand-over in frame time. The line goes back to following the turn
+    /// phase by itself once <paramref name="seconds"/> have passed — including when the hand-over is
+    /// cancelled with the match.
+    /// </summary>
+    public void ShowTurnHandoverNotice(float seconds)
+    {
+        statusNotice = TurnHandoverText;
+        statusNoticeUntil = Time.time + seconds;
     }
 
     /// <summary>
@@ -517,6 +600,8 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     void ReadPointer()
     {
         bool interactionThisFrame = false;
+        bool interactionFromTouch = false;
+        int interactionFinger = 0;
         Vector2 interactionPosition = Vector2.zero;
 
         // A browser can hand the input system a touchscreen even when the player is on a mouse, so the
@@ -527,6 +612,8 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
             Touchscreen.current.touches[0].press.wasPressedThisFrame)
         {
             interactionThisFrame = true;
+            interactionFromTouch = true;
+            interactionFinger = Touchscreen.current.touches[0].touchId.ReadValue();
             interactionPosition = Touchscreen.current.touches[0].position.ReadValue();
         }
         else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
@@ -535,7 +622,19 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
             interactionPosition = Mouse.current.position.ReadValue();
         }
 
-        if (!interactionThisFrame || pendingMove == null) return;
+        if (!interactionThisFrame) return;
+
+        // A click means something only while the human is being asked something: the re-roll question,
+        // where a click on a movable piece is the answer "keep the dice", or the move phase, where a piece
+        // and then a place make the move. Any other click falls on a board nobody is listening to.
+        if (pendingMove == null && rerollDecision == null) return;
+
+        // The re-roll buttons are drawn over the scene while the re-roll question is open, and the pieces
+        // behind them are found by a physics raycast, which knows nothing about the UI on top. Both answers
+        // to the question have to keep working, so a click that landed on a control is left to that control:
+        // otherwise a "throw again" click that happened to land on a piece would keep the dice instead, and
+        // whichever answer arrived first would win.
+        if (pendingMove == null && PointerIsOverInterface(interactionFromTouch, interactionFinger)) return;
 
         Ray ray = camera.ScreenPointToRay(interactionPosition);
         if (!Physics.Raycast(ray, out RaycastHit hit, 1000.0f, GameLogic.Instance.GetCurrentPlayer() == PieceOwner.P1 ? p1mask : p2mask)) return;
@@ -544,19 +643,24 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         if (data != null)
         {
             // Both hotseat players select their own pieces exactly the same way.
-            if (data.pieceInfo != null && data.pieceInfo.IsSelectable())
+            if (data.pieceInfo == null || !data.pieceInfo.IsSelectable()) return;
+
+            if (pendingMove == null)
             {
-                selectedPiece = data;
-                UpdatePieces();
-                for (int i = 0; i < places.Count; ++i)
-                {
-                    places[i].SetActive(data.pieceInfo.allowedPlaces.Contains(i));
-                }
+                // The re-roll question is on screen and the human answered it with a piece instead of a
+                // button: the pieces shown as selectable are exactly the ones keeping the dice would move,
+                // so this click keeps the dice and hands the piece to the move phase it opens.
+                pieceKeptWithDice = data;
+                pieceKeptWithDiceInfo = data.pieceInfo;
+                ResolvePendingReroll(RerollDecision.KeepDiceAndProceed);
+                return;
             }
+
+            SelectPiece(data);
             return;
         }
 
-        if (hit.transform.tag != "Place" || selectedPiece == null) return;
+        if (pendingMove == null || hit.transform.tag != "Place" || selectedPiece == null) return;
 
         var move = new Move(selectedPiece.pieceInfo.id, int.Parse(hit.transform.name));
         if (!IsPendingLegal(move)) return;
@@ -567,6 +671,21 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         Debug.Log("Move piece (" + chosen.pieceInfo.type + ") to place " + move.targetPlaceIndex);
         UpdatePieces();
     }
+
+    /// <summary>
+    /// True when the pointer that was just pressed is over a UI control, i.e. the click is that control's and
+    /// not the board's. The scene's <see cref="EventSystem"/> is what routes the buttons' own clicks, so it is
+    /// also the only thing that can say whether they were the target; a scene without one has no UI click to
+    /// protect, and the board answers everything.
+    /// </summary>
+    /// <param name="fromTouch">True when the press came from a touchscreen, whose pointers are indexed by finger.</param>
+    static bool PointerIsOverInterface(bool fromTouch, int fingerId)
+    {
+        EventSystem events = EventSystem.current;
+        if (events == null) return false;
+        return fromTouch ? events.IsPointerOverGameObject(fingerId) : events.IsPointerOverGameObject();
+    }
+
 
     public void BackToMainMenu()
     {
