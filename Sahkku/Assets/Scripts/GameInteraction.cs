@@ -1,12 +1,16 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.EnhancedTouch;
+using UnityEngine.Localization;
 using UnityEngine.Localization.Components;
 using UnityEngine.Localization.Settings;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
@@ -78,6 +82,28 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     List<GameObject> dice = new List<GameObject>();
     PieceData selectedPiece;
     GameObject keepDiceButton;
+
+    // The status line's translated entries, read from the table once at start-up. Unity Localization keeps
+    // its strings in Addressables, and on WebGL a read of one can only happen asynchronously — asking for a
+    // string directly from Update() would throw there — so they are fetched once and then read from here.
+    readonly Dictionary<string, string> statusText = new Dictionary<string, string>();
+
+    /// <summary>
+    /// The entries the status line can show: whose turn it is at each phase, how the match ended, and the
+    /// note that a bot is thinking. These are the only keys this scene asks the table for itself.
+    /// </summary>
+    static readonly string[] StatusKeys =
+    {
+        "Player_1_Roll",
+        "Player_1_Move",
+        "Player_2_Roll",
+        "Player_2_Move",
+        "Player_1_Win_Soldier",
+        "Player_1_Win_Queen",
+        "Player_2_Win_Soldier",
+        "Player_2_Win_Queen",
+        ThinkingKey,
+    };
 
     // The human's pending decision. The match controller awaits these tasks; a click resolves them.
     TaskCompletionSource<RerollDecision> rerollDecision;
@@ -151,6 +177,11 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         dice.Add(Instantiate(dicePrefab, diePos3.transform.position, Quaternion.identity));
 
         SetupRerollButtons();
+
+        // The status line's text is read in the background: Start() must not wait on the string table, or
+        // the board would never be reported ready and the match would wait for a presentation that is
+        // already finished.
+        StartCoroutine(LoadStatusText());
 
         UpdatePieces();
         IsReady = true;
@@ -309,12 +340,32 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
     {
         if (button == null) return;
 
-        // The label is localized in the scene; this button's meaning differs per state, so drive it here.
-        LocalizeStringEvent localize = button.GetComponentInChildren<LocalizeStringEvent>(true);
-        if (localize != null) localize.enabled = false;
-
+        // The label means something different per state, so it is driven from here. The text is written
+        // straight away and the button's localizer is then pointed at this state's entry: Unity
+        // Localization reads its tables from Addressables, and on WebGL that read can only be asynchronous,
+        // so looking the string up here would throw and leave Start() — and with it IsReady — unfinished.
         TextMeshProUGUI text = button.GetComponentInChildren<TextMeshProUGUI>(true);
-        if (text != null) text.text = LocalizationSettings.StringDatabase.GetLocalizedString(LocalizationTable, localizationKey);
+        if (text != null) text.text = FallbackLabel(localizationKey);
+
+        LocalizeStringEvent localize = button.GetComponentInChildren<LocalizeStringEvent>(true);
+        if (localize != null && localize.StringReference != null)
+        {
+            // Left enabled, the localizer both fills the label in when the entry arrives and keeps it in
+            // step with the selected language.
+            localize.enabled = true;
+            localize.StringReference.SetReference(LocalizationTable, localizationKey);
+        }
+    }
+
+    /// <summary>
+    /// Readable text for a button label until its entry has been read from the table. The two re-roll
+    /// choices say what that button means in the state it is shown in; anything else keeps its key.
+    /// </summary>
+    static string FallbackLabel(string localizationKey)
+    {
+        if (localizationKey == RerollKey) return "Throw Again";
+        if (localizationKey == KeepKey) return "Keep Dice";
+        return localizationKey;
     }
 
     void ShowRerollButtons(bool visible)
@@ -399,9 +450,50 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         }
     }
 
-    static string Localize(string key)
+    /// <summary>
+    /// The text behind a status key. The table is read asynchronously, so until the entry arrives the key
+    /// itself stands in — the line is never left blank, and the entry replaces it on a later frame.
+    /// </summary>
+    string Localize(string key)
     {
-        return LocalizationSettings.StringDatabase.GetLocalizedString(LocalizationTable, key);
+        return statusText.TryGetValue(key, out string text) ? text : key;
+    }
+
+    /// <summary>
+    /// Reads the strings the status line is made of, once the localization system is up. Each entry is read
+    /// through a <see cref="LocalizedString"/>, which on WebGL loads it asynchronously; one that is missing
+    /// from the table keeps its key as the text instead.
+    /// </summary>
+    IEnumerator LoadStatusText()
+    {
+        yield return LocalizationSettings.InitializationOperation;
+
+        foreach (string key in StatusKeys)
+        {
+            AsyncOperationHandle<string> entry = new LocalizedString(LocalizationTable, key).GetLocalizedStringAsync();
+
+            // The entry is held across frames while it is read, so this coroutine takes a reference of its
+            // own on the operation and hands it back once the text has been taken — or once the scene is
+            // gone and the coroutine is stopped part way through. Only that one reference is released: Unity
+            // Localization drops an asynchronous string operation by itself, a frame after it completed, so
+            // releasing the handle a second time would take the operation's reference count below what it
+            // was given.
+            Addressables.ResourceManager.Acquire(entry);
+            try
+            {
+                yield return entry;
+
+                string translated = entry.IsValid() ? entry.Result : null;
+                if (!string.IsNullOrEmpty(translated))
+                {
+                    statusText[key] = translated;
+                }
+            }
+            finally
+            {
+                Addressables.Release(entry);
+            }
+        }
     }
 
     void UpdateDieHighlight()
@@ -427,17 +519,19 @@ public class GameInteraction : MonoBehaviour, IHumanInteraction
         bool interactionThisFrame = false;
         Vector2 interactionPosition = Vector2.zero;
 
-        if (Touchscreen.current != null)
+        // A browser can hand the input system a touchscreen even when the player is on a mouse, so the
+        // devices are checked in turn rather than one hiding the other: a touch that was actually pressed
+        // this frame is answered, and anything else falls through to the mouse.
+        if (Touchscreen.current != null &&
+            Touchscreen.current.touches.Count > 0 &&
+            Touchscreen.current.touches[0].press.wasPressedThisFrame)
         {
-            if (Touchscreen.current.touches.Count > 0)
-            {
-                interactionThisFrame = Touchscreen.current.touches[0].press.wasPressedThisFrame;
-                interactionPosition = Touchscreen.current.touches[0].position.ReadValue();
-            }
+            interactionThisFrame = true;
+            interactionPosition = Touchscreen.current.touches[0].position.ReadValue();
         }
-        else if (Mouse.current != null)
+        else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
-            interactionThisFrame = Mouse.current.leftButton.wasPressedThisFrame;
+            interactionThisFrame = true;
             interactionPosition = Mouse.current.position.ReadValue();
         }
 
