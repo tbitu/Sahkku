@@ -20,6 +20,14 @@ public class GameLogic : MonoBehaviour
     [SerializeField] float diceSettleSeconds = 1.1f;
     [SerializeField] float botThinkSeconds = 1.0f;
 
+    /// <summary>
+    /// How long the board says why a turn is being handed over without a move before the turn actually
+    /// changes hands. The hand-over itself is instant — the engine makes it inside the call that keeps the
+    /// dice, or as soon as the move phase finds no legal move — and one that happens between two frames
+    /// reads as input the game dropped rather than as a rule it applied.
+    /// </summary>
+    [SerializeField] float turnHandoverNoticeSeconds = 1.0f;
+
     [Header("Safety")]
     [SerializeField] float agentReplyTimeoutSeconds = 10.0f;
     [SerializeField] int maxRerollsPerThrow = 32;
@@ -62,6 +70,21 @@ public class GameLogic : MonoBehaviour
     public bool CanReroll()
     {
         return engine.CanReroll(state);
+    }
+
+    /// <summary>
+    /// Re-reads which of the current player's pieces the dice on the table can move, and re-renders the
+    /// board on the result. The rules engine is the only thing that fills in
+    /// <see cref="Piece.allowedPlaces"/>, so this is how the board learns what a human may click.
+    ///
+    /// The match loop calls it after every change to those dice (including the ones made while a bot is
+    /// being asked about its own throw); the board calls it when a re-roll question opens, because the
+    /// pieces keeping the dice would move are exactly the pieces a click may answer that question with.
+    /// </summary>
+    public void RefreshMovablePieces()
+    {
+        engine.EvaluateAllowedPlaces(state);
+        GameInteraction.Instance.UpdatePieces();
     }
 
     /// <summary>True when a human, rather than a bot, is deciding right now. Drives the turn banner.</summary>
@@ -206,7 +229,10 @@ public class GameLogic : MonoBehaviour
                 {
                     engine.RollDice(state, randomSource);
                     AnimateDiceThrow();
-                    GameInteraction.Instance.UpdatePieces();
+
+                    // The pieces this throw can move are worth showing from the moment the dice land: the
+                    // re-roll question that follows is answered with one of them as readily as with a button.
+                    RefreshMovablePieces();
                     await DelayAsync(diceSettleSeconds, cancellationToken);
                 }
 
@@ -255,8 +281,9 @@ public class GameLogic : MonoBehaviour
 
             if (!engine.CanReroll(state))
             {
-                // Not on offer: keeping the dice is the only legal resolution, and it opens the move phase.
-                engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+                // Not on offer: keeping the dice is the only legal resolution, and it opens the move phase
+                // — or hands the turn over, which the helper paces and explains.
+                await KeepDiceAndProceedAsync(cancellationToken);
                 return;
             }
 
@@ -266,17 +293,46 @@ public class GameLogic : MonoBehaviour
                 engine.ApplyRerollDecision(state, randomSource, RerollDecision.RerollActiveDie);
                 GameInteraction.Instance.RollDice(state.currentActiveDie);
                 AudioManager.Instance.PlayRandomSound("BircutOkta", 8, 0.5f);
-                GameInteraction.Instance.UpdatePieces();
+                // A re-thrown die is a different throw, so what the board offers to move has to be read
+                // again: the pieces the old face allowed are not the pieces this one does.
+                RefreshMovablePieces();
                 await DelayAsync(diceSettleSeconds, cancellationToken);
                 continue;
             }
 
-            engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+            await KeepDiceAndProceedAsync(cancellationToken);
             return;
         }
 
         Debug.LogWarning("Re-rolling was capped after " + maxRerollsPerThrow + " attempts; keeping the dice.", this);
-        if (!state.gameOver && !state.IsRollPhase) engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+        if (!state.gameOver && !state.IsRollPhase) await KeepDiceAndProceedAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Keeps the dice of the throw on the table and opens the move phase.
+    ///
+    /// A throw that nothing on the board can spend is handed over by the engine inside
+    /// <see cref="RulesEngine.ApplyRerollDecision"/>, so the hand-over is announced here, before that call:
+    /// this is the path a first throw with no sáhkku takes, and without the notice the turn would vanish
+    /// with the dice still lying there.
+    /// </summary>
+    async Task KeepDiceAndProceedAsync(CancellationToken cancellationToken)
+    {
+        if (!engine.EvaluateAllowedPlaces(state)) await AnnounceTurnHandoverAsync(cancellationToken);
+
+        engine.ApplyRerollDecision(state, null, RerollDecision.KeepDiceAndProceed);
+        RefreshMovablePieces();
+    }
+
+    /// <summary>
+    /// Tells the board why this turn is being handed over without a move and waits for the notice to be
+    /// readable, in frame time. Both hand-overs — a throw nothing can be spent on, and a move phase that runs
+    /// out of legal moves — come through here, so the pause is the same at either one.
+    /// </summary>
+    async Task AnnounceTurnHandoverAsync(CancellationToken cancellationToken)
+    {
+        GameInteraction.Instance.ShowTurnHandoverNotice(turnHandoverNoticeSeconds);
+        await DelayAsync(turnHandoverNoticeSeconds, cancellationToken);
     }
 
     async Task PlayMovePhaseAsync(IPlayerAgent agent, CancellationToken cancellationToken)
@@ -286,7 +342,11 @@ public class GameLogic : MonoBehaviour
             List<Move> legalMoves = engine.LegalMoves(state);
             if (legalMoves.Count == 0)
             {
-                // No die of this throw can be spent: the engine hands the turn over.
+                // No die of this throw can be spent: the engine hands the turn over. It is announced and
+                // paced first, so the player sees the throw the turn ended on and why nothing was done with
+                // it — the hand-over is otherwise instantaneous and silent.
+                await AnnounceTurnHandoverAsync(cancellationToken);
+
                 engine.EvaluateAllowedPlaces(state);
                 engine.NextPlayerTurn(state);
                 GameInteraction.Instance.UpdatePieces();
