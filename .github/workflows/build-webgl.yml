@@ -39,6 +39,11 @@ jobs:
           restore-keys: |
             Library-
 
+      - name: Clean Transient Compiler Cache
+        run: |
+          # Purge compiler DAGs and assembly cache from restored cache to prevent cross-commit conflicts
+          rm -rf Sahkku/Library/Bee Sahkku/Library/ScriptAssemblies Sahkku/Library/DataStore
+
       - name: Build WebGL Player
         uses: game-ci/unity-builder@v4
         env:
