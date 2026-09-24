@@ -27,12 +27,9 @@ jobs:
           lfs: true
 
       - name: Configure Swap Space
-        run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 12
 
       - name: Restore / Cache Library
         uses: actions/cache@v4
@@ -53,6 +50,7 @@ jobs:
           targetPlatform: WebGL
           buildMethod: Sahkku.Editor.BuildWebGL.BuildFromCommandLine
           buildsPath: build
+          dockerShmSize: 2g
 
       - name: Package WebGL
         run: |
