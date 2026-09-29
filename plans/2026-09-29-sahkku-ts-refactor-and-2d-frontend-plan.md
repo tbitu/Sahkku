@@ -15,8 +15,8 @@ task_order:
   - 3-open-2d-web-board-frontend
   - 4-modes-settings-audio-locale
   - 5-e2e-tests-and-csharp-sunset
-active_task_id: 4-modes-settings-audio-locale
-last_completed_task_id: 3-open-2d-web-board-frontend
+active_task_id: 5-e2e-tests-and-csharp-sunset
+last_completed_task_id: 4-modes-settings-audio-locale
 archive_group: 2026-09-29-sahkku-ts-refactor-and-2d-frontend
 task_tracker:
   - task_id: 1-ts-rules-core-and-tests
@@ -32,8 +32,8 @@ task_tracker:
     status: archived
     notes: "Build an open-license, dependency-light 2D web board game interface with Vite, featuring 15x3 board layout, piece movement/selection, 2D dice roller, and turn orchestration."
   - task_id: 4-modes-settings-audio-locale
-    task_path: plans/tasks/4-modes-settings-audio-locale.md
-    status: approved
+    task_path: plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/4-modes-settings-audio-locale.md
+    status: archived
     notes: "Implement game modes (Single-player AI, Local 2P hotseat, Bot-vs-Bot), settings modal (LLM endpoint config), Web Audio sound effects, and tri-lingual localization (Sámi, Norwegian, English)."
   - task_id: 5-e2e-tests-and-csharp-sunset
     task_path: null
@@ -142,7 +142,7 @@ Completely refactor the Digital Sáhkku project by replacing the entire C# codeb
 | `1-ts-rules-core-and-tests` | `plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/1-ts-rules-core-and-tests.md` | Port `Sahkku.Rules` (Domain, RuleSet, Track, RulesEngine, GameStateFormatter) to strict TypeScript with 100% parity of all 139 unit tests in Vitest. | N/A | TypeScript core rules engine & test parity | archived |
 | `2-ts-agents-and-cli-bench` | `plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/2-ts-agents-and-cli-bench.md` | Port `IPlayerAgent` interface, Human, Random, Heuristic, and LLM agents, plus the headless CLI match runner and benchmark tool (`npm run bench`). | `1-ts-rules-core-and-tests` | Agent framework and off-engine CLI benchmarking | archived |
 | `3-open-2d-web-board-frontend` | `plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/3-open-2d-web-board-frontend.md` | Create the open-license 2D web board game frontend with Vite, 15x3 top-down wooden board, distinct 2D piece tokens, interactive destination highlights, and 2D dice roller. | `1-ts-rules-core-and-tests` | Visual 2D board game client and core match loop | archived |
-| `4-modes-settings-audio-locale` | `plans/tasks/4-modes-settings-audio-locale.md` | Add Hotseat, AI bot matches, LLM endpoint configuration modal, synthesized/CC0 Web Audio sound effects, and tri-lingual localization (Sámi, Norwegian, English). | `2-ts-agents-and-cli-bench`, `3-open-2d-web-board-frontend` | Game modes, options, audio, and language accessibility | approved |
+| `4-modes-settings-audio-locale` | `plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/4-modes-settings-audio-locale.md` | Add Hotseat, AI bot matches, LLM endpoint configuration modal, synthesized/CC0 Web Audio sound effects, and tri-lingual localization (Sámi, Norwegian, English). | `2-ts-agents-and-cli-bench`, `3-open-2d-web-board-frontend` | Game modes, options, audio, and language accessibility | archived |
 | `5-e2e-tests-and-csharp-sunset` | `plans/tasks/5-e2e-tests-and-csharp-sunset.md` | Add automated Playwright E2E browser tests, update `pairflow.toml` validation commands to npm, retire Unity and C# codebase, and update documentation. | `4-modes-settings-audio-locale` | E2E quality validation, CI alignment, and legacy cleanup | not_created |
 
 ## Coverage Map

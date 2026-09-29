@@ -18,6 +18,7 @@
  * resting lower — while an activated piece is raised and bright.
  */
 
+import { defaultTranslate, type Translator } from "../locale/i18n";
 import { PieceOwner, PieceType } from "../rules/domain";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -72,35 +73,40 @@ export class PieceRenderer {
   }
 
   /** The human-readable name used in status bars, aria labels and the legend. */
-  static describe(spec: PieceTokenSpec): string {
-    const state = spec.isActive ? "active" : "seated";
-    return `${pieceName(spec.type, spec.owner)} (${state})`;
+  static describe(spec: PieceTokenSpec, t: Translator = defaultTranslate): string {
+    const state = t(spec.isActive ? "pieces.active" : "pieces.seated");
+    return t("pieces.describe", { piece: t(pieceNameKey(spec.type, spec.owner)), state });
   }
 }
 
-/** The side's name as the rules describe it: player one fields the Women, player two the Men. */
-export function ownerName(owner: PieceOwner): string {
+/**
+ * The locale key of a side's name: player one fields the Women, player two the Men. Naming goes through
+ * the string tables rather than a hardcoded English word, so a piece is called *Nisu* on a Sámi board
+ * and *Kvinne* on a Norwegian one — and the legend, the status line and the board's aria labels cannot
+ * drift apart, because they all resolve the same key.
+ */
+export function ownerNameKey(owner: PieceOwner): string {
   switch (owner) {
     case PieceOwner.P1:
-      return "P1 · Women";
+      return "owners.p1";
     case PieceOwner.P2:
-      return "P2 · Men";
+      return "owners.p2";
     default:
-      return "Neutral";
+      return "owners.none";
   }
 }
 
-/** The piece's name, qualified by whose side its kind belongs to. */
-export function pieceName(type: PieceType, owner: PieceOwner): string {
+/** The locale key of a piece's name, qualified by whose side its kind belongs to. */
+export function pieceNameKey(type: PieceType, owner: PieceOwner): string {
   switch (type) {
     case PieceType.Soldier:
-      if (owner === PieceOwner.P1) return "Woman";
-      if (owner === PieceOwner.P2) return "Man";
-      return "Soldier";
+      if (owner === PieceOwner.P1) return "pieces.woman";
+      if (owner === PieceOwner.P2) return "pieces.man";
+      return "pieces.soldier";
     case PieceType.Queen:
-      return "Queen";
+      return "pieces.queen";
     default:
-      return owner === PieceOwner.None ? "Neutral king" : "King";
+      return owner === PieceOwner.None ? "pieces.neutralKing" : "pieces.king";
   }
 }
 

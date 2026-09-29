@@ -19,53 +19,136 @@
     <div class="app" id="app">
       <header class="app-header">
         <div class="app-title">
-          <h1>Sáhkku</h1>
-          <p class="app-subtitle">
+          <h1 data-i18n="app.title">Sáhkku</h1>
+          <p class="app-subtitle" data-i18n="app.subtitle">
             Traditional Sámi running-fight board game — open-license 2D client
           </p>
         </div>
         <div class="app-header-actions">
-          <button type="button" class="button button--ghost" id="restart-button">
+          <div class="control">
+            <label class="control-label" for="locale-select" data-i18n="menu.language">
+              Language
+            </label>
+            <select class="control-select" id="locale-select"></select>
+          </div>
+          <button
+            type="button"
+            class="button button--ghost"
+            id="help-button"
+            data-i18n="menu.help"
+          >
+            Rules &amp; help
+          </button>
+          <button
+            type="button"
+            class="button button--ghost"
+            id="settings-button"
+            data-i18n="menu.settings"
+          >
+            Settings
+          </button>
+          <button
+            type="button"
+            class="button button--ghost"
+            id="restart-button"
+            data-i18n="menu.start"
+          >
             New game
           </button>
         </div>
       </header>
 
+      <!-- Match setup: the mode, the two bot seats, the pace, the variant and who starts. -->
+      <section
+        class="match-setup"
+        id="match-setup"
+        data-i18n-attr="aria-label=menu.setup"
+        aria-label="Match setup"
+      >
+        <div class="control">
+          <label class="control-label" for="mode-select" data-i18n="menu.modeLabel">Match mode</label>
+          <select class="control-select" id="mode-select"></select>
+        </div>
+        <div class="control">
+          <label class="control-label" for="bot1-select" data-i18n="menu.bot1Label">Bot (Women)</label>
+          <select class="control-select" id="bot1-select"></select>
+        </div>
+        <div class="control">
+          <label class="control-label" for="bot2-select" data-i18n="menu.bot2Label">Bot (Men)</label>
+          <select class="control-select" id="bot2-select"></select>
+        </div>
+        <div class="control">
+          <label class="control-label" for="speed-select" data-i18n="menu.speedLabel">Speed</label>
+          <select class="control-select" id="speed-select"></select>
+        </div>
+        <div class="control">
+          <label class="control-label" for="variant-select" data-i18n="menu.variantLabel">Variant</label>
+          <select class="control-select" id="variant-select"></select>
+        </div>
+        <div class="control">
+          <label class="control-label" for="starter-select" data-i18n="menu.starterLabel">
+            Starting player
+          </label>
+          <select class="control-select" id="starter-select"></select>
+        </div>
+      </section>
+
       <main class="tabletop">
-        <section class="panel panel--board" aria-label="Board">
+        <section
+          class="panel panel--board"
+          data-i18n-attr="aria-label=board.label"
+          aria-label="Sáhkku board: three rows of fifteen carved cells"
+        >
           <div class="status-bar" id="status-bar" role="status" aria-live="polite"></div>
           <div class="banner" id="banner" role="log" aria-live="polite" hidden></div>
           <div
             class="board"
             id="board"
             role="group"
+            data-i18n-attr="aria-label=board.label"
             aria-label="Sáhkku board: three rows of fifteen carved cells"
           ></div>
-          <div class="legend" id="legend" aria-label="Piece legend"></div>
+          <div
+            class="legend"
+            id="legend"
+            data-i18n-attr="aria-label=legend.label"
+            aria-label="Piece legend"
+          ></div>
         </section>
 
-        <aside class="panel panel--dice" aria-label="Dice tray">
-          <h2 class="panel-title">Sáhkku dice</h2>
+        <aside
+          class="panel panel--dice"
+          data-i18n-attr="aria-label=dice.panelTitle"
+          aria-label="Sáhkku dice"
+        >
+          <h2 class="panel-title" data-i18n="dice.panelTitle">Sáhkku dice</h2>
           <div class="dice-tray" id="dice-tray"></div>
           <div class="dice-actions" id="dice-actions"></div>
           <p class="dice-hint">
-            Faces: <span class="dice-hint-mark">X</span> one step / activate / reroll ·
-            <span class="dice-hint-mark">III</span> three steps ·
-            <span class="dice-hint-mark">II</span> two steps ·
-            <span class="dice-hint-mark">·</span> blank
+            <span data-i18n="dice.hintPrefix">Faces</span>:
+            <span class="dice-hint-mark">X</span>
+            <span data-i18n="dice.hintSahhku">one step / activate / reroll</span> ·
+            <span class="dice-hint-mark">III</span>
+            <span data-i18n="dice.hintThree">three steps</span> ·
+            <span class="dice-hint-mark">II</span>
+            <span data-i18n="dice.hintTwo">two steps</span> ·
+            <span class="dice-hint-mark">·</span>
+            <span data-i18n="dice.hintZero">blank</span>
           </p>
         </aside>
       </main>
 
       <footer class="app-footer">
-        <p>
+        <p data-i18n="app.footer">
           Sáhkku is a traditional game of the Sámi people. Rules engine, agents and this 2D client
           are open source.
         </p>
       </footer>
     </div>
 
+    <!-- The end-of-match card lives alone in `#modal-root`; the two dialogs mount in `#dialog-root`. -->
     <div class="modal-root" id="modal-root"></div>
+    <div class="modal-root" id="dialog-root"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
