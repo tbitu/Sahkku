@@ -16,8 +16,13 @@
  * active die may be re-thrown (`RulesEngine.canReroll`, i.e. a sáhkku before any die was spent) the
  * tray offers the player's explicit choice — **Reroll Die** or **Keep & Move** — because the engine
  * never decides that for them.
+ *
+ * Every caption either comes from the `MatchViewModel` (the controller localizes the button labels and
+ * the spending-order line) or from the {@link Translator} handed to the constructor, which owns this
+ * view's own accessible names. Nothing here decides anything.
  */
 
+import { defaultTranslate, type Translator } from "../locale/i18n";
 import { DieFace } from "../rules/domain";
 import type { MatchViewModel } from "./controller";
 
@@ -36,15 +41,27 @@ export class DiceView {
   private readonly tray: HTMLElement;
   private readonly actions: HTMLElement;
 
+  private translate: Translator;
   private dieElements: HTMLElement[] = [];
   private callbacks: DiceCallbacks | null = null;
   private lastSignature = "";
   private rollTimer: number | null = null;
 
-  constructor(tray: HTMLElement, actions: HTMLElement) {
+  constructor(tray: HTMLElement, actions: HTMLElement, translate: Translator = defaultTranslate) {
     this.tray = tray;
     this.actions = actions;
+    this.translate = translate;
+    this.tray.setAttribute("aria-label", translate("dice.trayLabel"));
     this.actions.addEventListener("click", (event) => this.handleActionClick(event));
+  }
+
+  /**
+   * Re-letters the tray in a new language. The die names are refreshed by the next `render`, which every
+   * locale switch triggers through the controller's repaint.
+   */
+  setTranslator(translate: Translator): void {
+    this.translate = translate;
+    this.tray.setAttribute("aria-label", translate("dice.trayLabel"));
   }
 
   /** Paints the tray and the action buttons for one frame. */
@@ -64,7 +81,10 @@ export class DiceView {
 
       element.classList.toggle("die--active", rolled && die.active);
       element.classList.toggle("die--spent", die.spent);
-      element.setAttribute("aria-label", dieLabel(index, die.face, rolled, die.spent, die.active));
+      element.setAttribute(
+        "aria-label",
+        dieLabel(this.translate, index, die.face, rolled, die.spent, die.active),
+      );
 
       const marks = element.querySelector<SVGGElement>(".die-marks");
       if (marks != null) drawFace(doc, marks, rolled ? die.face : null);
@@ -135,13 +155,19 @@ export class DiceView {
     this.actions.appendChild(order);
 
     if (view.dice.canRoll) {
-      this.actions.appendChild(createButton(doc, "roll", "button--primary", "Roll Dice"));
+      this.actions.appendChild(
+        createButton(doc, "roll", "button--primary", view.dice.rollLabel),
+      );
       return;
     }
 
     if (view.dice.canReroll) {
-      this.actions.appendChild(createButton(doc, "reroll", "button--primary", "Reroll Die"));
-      this.actions.appendChild(createButton(doc, "keep", "button--secondary", "Keep & Move"));
+      this.actions.appendChild(
+        createButton(doc, "reroll", "button--primary", view.dice.rerollLabel),
+      );
+      this.actions.appendChild(
+        createButton(doc, "keep", "button--secondary", view.dice.keepLabel),
+      );
     }
   }
 
@@ -249,27 +275,28 @@ function faceSlug(face: DieFace): string {
   }
 }
 
-function faceName(face: DieFace): string {
+function faceNameKey(face: DieFace): string {
   switch (face) {
     case DieFace.Sahhku:
-      return "X (sáhkku)";
+      return "dice.face.sahkku";
     case DieFace.Three:
-      return "III (three)";
+      return "dice.face.three";
     case DieFace.Two:
-      return "II (two)";
+      return "dice.face.two";
     default:
-      return "blank";
+      return "dice.face.zero";
   }
 }
 
 function dieLabel(
+  t: Translator,
   index: number,
   face: DieFace,
   rolled: boolean,
   spent: boolean,
   active: boolean,
 ): string {
-  if (!rolled) return `Die ${index + 1}: not thrown yet`;
-  const state = spent ? "spent" : active ? "up for spending" : "waiting";
-  return `Die ${index + 1}: ${faceName(face)}, ${state}`;
+  if (!rolled) return t("dice.die.notThrown", { index: index + 1 });
+  const state = t(spent ? "dice.state.spent" : active ? "dice.state.active" : "dice.state.waiting");
+  return t("dice.die.state", { index: index + 1, face: t(faceNameKey(face)), state });
 }

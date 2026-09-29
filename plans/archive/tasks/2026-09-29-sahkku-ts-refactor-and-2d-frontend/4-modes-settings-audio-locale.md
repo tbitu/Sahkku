@@ -5,7 +5,7 @@ task_family_id: modes-settings-audio-locale
 sequence_key: "4"
 task_id: 4-modes-settings-audio-locale
 title: "Implement Game Modes, LLM Settings, Web Audio SFX, and Tri-lingual Localization"
-status: approved
+status: archived
 phase: implementation
 target_files:
   - index.html
