@@ -24,8 +24,8 @@ task_tracker:
     status: archived
     notes: "Port C# Sahkku.Rules core (Domain, RuleSet, Track, RulesEngine, GameStateFormatter) to strict TypeScript with 100% parity of all 139 unit tests in Vitest against SahkkuRules.json."
   - task_id: 2-ts-agents-and-cli-bench
-    task_path: null
-    status: not_created
+    task_path: plans/tasks/2-ts-agents-and-cli-bench.md
+    status: approved
     notes: "Port player agents (Human, Random, Heuristic, LLM Agent with fetch/OpenAI client) and headless CLI match runner/benchmark tool to TypeScript."
   - task_id: 3-open-2d-web-board-frontend
     task_path: null
@@ -140,7 +140,7 @@ Completely refactor the Digital Sáhkku project by replacing the entire C# codeb
 | Task ID | Task Path | Purpose | Depends On | Closes Gap | Status |
 |---|---|---|---|---|---|
 | `1-ts-rules-core-and-tests` | `plans/archive/tasks/2026-09-29-sahkku-ts-refactor-and-2d-frontend/1-ts-rules-core-and-tests.md` | Port `Sahkku.Rules` (Domain, RuleSet, Track, RulesEngine, GameStateFormatter) to strict TypeScript with 100% parity of all 139 unit tests in Vitest. | N/A | TypeScript core rules engine & test parity | archived |
-| `2-ts-agents-and-cli-bench` | `plans/tasks/2-ts-agents-and-cli-bench.md` | Port `IPlayerAgent` interface, Human, Random, Heuristic, and LLM agents, plus the headless CLI match runner and benchmark tool (`npm run bench`). | `1-ts-rules-core-and-tests` | Agent framework and off-engine CLI benchmarking | not_created |
+| `2-ts-agents-and-cli-bench` | `plans/tasks/2-ts-agents-and-cli-bench.md` | Port `IPlayerAgent` interface, Human, Random, Heuristic, and LLM agents, plus the headless CLI match runner and benchmark tool (`npm run bench`). | `1-ts-rules-core-and-tests` | Agent framework and off-engine CLI benchmarking | approved |
 | `3-open-2d-web-board-frontend` | `plans/tasks/3-open-2d-web-board-frontend.md` | Create the open-license 2D web board game frontend with Vite, 15x3 top-down wooden board, distinct 2D piece tokens, interactive destination highlights, and 2D dice roller. | `1-ts-rules-core-and-tests` | Visual 2D board game client and core match loop | not_created |
 | `4-modes-settings-audio-locale` | `plans/tasks/4-modes-settings-audio-locale.md` | Add Hotseat, AI bot matches, LLM endpoint configuration modal, synthesized/CC0 Web Audio sound effects, and tri-lingual localization (Sámi, Norwegian, English). | `2-ts-agents-and-cli-bench`, `3-open-2d-web-board-frontend` | Game modes, options, audio, and language accessibility | not_created |
 | `5-e2e-tests-and-csharp-sunset` | `plans/tasks/5-e2e-tests-and-csharp-sunset.md` | Add automated Playwright E2E browser tests, update `pairflow.toml` validation commands to npm, retire Unity and C# codebase, and update documentation. | `4-modes-settings-audio-locale` | E2E quality validation, CI alignment, and legacy cleanup | not_created |
