@@ -1,0 +1,113 @@
+{
+  "id": "sahkku.lagesvuotna.unjarga.vuonnamarkan",
+  "version": 2,
+
+  "board": {
+    "width": 15,
+    "height": 3,
+    "layout": "rowMajorSnake"
+  },
+
+  "track": {
+    "legs": [
+      { "row": 0, "direction": "right" },
+      { "row": 1, "direction": "left" },
+      { "row": 2, "direction": "right" },
+      { "row": 1, "direction": "left" }
+    ]
+  },
+
+  "pieces": {
+    "soldier": {
+      "moves": ["forward"],
+      "movesScaleWithDie": true,
+      "startActivatable": false,
+      "queuesNextOnActivation": true,
+      "blocksOwnLanding": false,
+      "cannotLandOnOwnUnits": false,
+      "capturable": true,
+      "recruitedWhenLanded": false,
+      "landingEndsGame": false,
+      "recruitsKingOnEnemyHomeRow": true
+    },
+    "queen": {
+      "moves": ["forward", "backward", "vertical"],
+      "movesScaleWithDie": true,
+      "startActivatable": true,
+      "queuesNextOnActivation": false,
+      "blocksOwnLanding": true,
+      "cannotLandOnOwnUnits": true,
+      "capturable": true,
+      "recruitedWhenLanded": false,
+      "landingEndsGame": true,
+      "recruitsKingOnEnemyHomeRow": false
+    },
+    "king": {
+      "moves": ["forward", "backward", "vertical"],
+      "movesScaleWithDie": true,
+      "startActivatable": false,
+      "queuesNextOnActivation": false,
+      "blocksOwnLanding": true,
+      "cannotLandOnOwnUnits": true,
+      "capturable": false,
+      "recruitedWhenLanded": true,
+      "landingEndsGame": false,
+      "recruitsKingOnEnemyHomeRow": false
+    }
+  },
+
+  "dice": {
+    "count": 3,
+    "activateFace": "sahhku",
+    "useOrder": ["sahhku", "three", "two", "zero"],
+    "reroll": {
+      "faces": ["sahhku"],
+      "beforeUsingAnyDie": true
+    },
+    "faces": [
+      { "id": "sahhku", "steps": 1 },
+      { "id": "three", "steps": 3 },
+      { "id": "two", "steps": 2 },
+      { "id": "zero", "steps": 0 }
+    ]
+  },
+
+  "activation": {
+    "onMoveInactivePiece": {
+      "unlockOffset": -1
+    }
+  },
+
+  "inactive": {
+    "enterable": false
+  },
+
+  "start": {
+    "mode": "firstSahhku"
+  },
+
+  "setup": {
+    "soldiers": {
+      "P1": { "row": 0, "placement": "all" },
+      "P2": { "row": 2, "placement": "all" }
+    },
+    "queens": {
+      "P1": { "row": 1, "x": 11 },
+      "P2": { "row": 1, "x": 3 }
+    },
+    "king": { "owner": "neutral", "row": 1, "x": 7 }
+  },
+
+  "variants": {
+    "standard": {
+      "soldiersActive": 0
+    },
+    "evenOdds": {
+      "soldiersActive": 3
+    }
+  },
+
+  "win": {
+    "opponentSoldiersExhausted": true
+  }
+}
