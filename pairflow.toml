@@ -14,7 +14,7 @@ bootstrap = "dotnet restore Tools/RulesTests/RulesTests.csproj"
 reviewer = "opencode"
 reviewer_model = "lmstudio/pairflow-reviewer"
 implementer = "reasonix"
-#implementer_model = "lmstudio/pairflow-implementer"
+implementer_model = "deepseek-flash"
 meta_reviewer = "opencode"
 meta_reviewer_model = "lmstudio/pairflow-meta-reviewer"
 
