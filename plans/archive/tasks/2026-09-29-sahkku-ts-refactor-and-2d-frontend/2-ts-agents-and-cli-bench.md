@@ -5,7 +5,7 @@ task_family_id: ts-agents-and-cli-bench
 sequence_key: "2"
 task_id: 2-ts-agents-and-cli-bench
 title: "Port Player Agents (Human, Random, Heuristic, LLM) and Headless CLI Benchmark to TypeScript"
-status: approved
+status: archived
 phase: implementation
 target_files:
   - package.json
