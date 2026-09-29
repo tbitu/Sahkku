@@ -19,6 +19,9 @@ Tools/**/obj/
 node_modules/
 coverage/
 
+# Static bundle produced by the 2D web client (`npm run build`).
+dist/
+
 # Editor and OS cruft.
 .DS_Store
 Thumbs.db

@@ -2,10 +2,13 @@
   "name": "sahkku",
   "version": "0.1.0",
   "private": true,
-  "description": "Digital Sahkku - pure TypeScript rules core (ported from Sahkku.Rules)",
+  "description": "Digital Sahkku - pure TypeScript rules core (ported from Sahkku.Rules) with an open-license 2D web board",
   "type": "module",
   "license": "SEE LICENSE IN License.txt",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -15,6 +18,7 @@
     "@types/node": "^26.6.3",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
+    "vite": "^8.3.1",
     "vitest": "^5.0.2"
   }
 }
