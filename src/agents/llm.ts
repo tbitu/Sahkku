@@ -1,0 +1,568 @@
+/**
+ * The LLM NPC: a 1:1 port of `LlmClient.cs` and `LlmPlayerAgent.cs` in
+ * `Sahkku/Assets/Scripts/RulesBridge/`.
+ *
+ * The agent asks an OpenAI-compatible endpoint to pick one of the moves the engine has already declared
+ * legal, and accepts the answer only after checking it against that list. The rules engine stays the sole
+ * authority — this agent can only ever return a member of `legalMoves`, never a mutation of the state.
+ *
+ * Every failure resolves the same way, without throwing and without hanging the match: no transport,
+ * connection refused, HTTP non-200, timeout, an answer that is not the JSON it was asked for, an index
+ * outside the legal list, or a re-roll that is not on offer. All of them log once and fall back to the
+ * deterministic `HeuristicPlayerAgent`. A cancellation of the *caller's* signal is the one exception,
+ * because that is the match ending rather than the model failing.
+ */
+
+import { GameState, Move, PieceOwner, RerollDecision } from "../rules/domain";
+import type { RulesEngine } from "../rules/engine";
+import { GameStateFormatter } from "../rules/formatter";
+import { HeuristicPlayerAgent } from "./heuristic";
+import type { PlayerAgent } from "./types";
+
+// ----------------------------------------------------------------------------------------------
+// The transport seam
+// ----------------------------------------------------------------------------------------------
+
+/** The bits of a `Response` the transport reads, so a test can script one without a socket. */
+export interface LlmHttpResponse {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly statusText: string;
+  text(): Promise<string>;
+}
+
+/** The shape of the platform `fetch`, narrowed to what this module uses. */
+export type LlmFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
+) => Promise<LlmHttpResponse>;
+
+/**
+ * The network seam under `LlmPlayerAgent`: one POST of an OpenAI-compatible chat-completions body,
+ * resolved with the response text. Tests script it, which is what keeps the headless suite offline;
+ * every failure surfaces as an exception, because deciding what to do about a failure is the agent's
+ * job (see the fallback matrix in `LlmPlayerAgent`), not the transport's.
+ */
+export interface LlmTransport {
+  /** Posts `requestJson` to `endpointUrl` and returns the response body. */
+  postChatCompletion(endpointUrl: string, requestJson: string, signal?: AbortSignal): Promise<string>;
+}
+
+/** Default per-request deadline of `FetchLlmTransport`, matching the reference client's 10 seconds. */
+export const DefaultTransportTimeoutMs = 10000;
+
+/**
+ * The shipped transport: plain `fetch` against any OpenAI-compatible endpoint — LM Studio
+ * (`http://localhost:1234/v1/chat/completions`), Ollama, or a hosted API.
+ *
+ * The deadline is its own controller linked to the caller's signal rather than a property of a shared
+ * client, so a deadline that fires cancels the *linked* signal only: the agent can then tell "the model
+ * was too slow" (a failure it recovers from) apart from "the match was cancelled" (an error it rethrows).
+ */
+export class FetchLlmTransport implements LlmTransport {
+  private readonly fetchImpl: LlmFetch;
+
+  /** Per-request deadline in milliseconds; zero or a negative value disables it. */
+  readonly requestTimeoutMs: number;
+
+  constructor(fetchImpl: LlmFetch | null = null, requestTimeoutMs = DefaultTransportTimeoutMs) {
+    this.fetchImpl = fetchImpl ?? defaultFetch;
+    this.requestTimeoutMs = requestTimeoutMs;
+  }
+
+  async postChatCompletion(
+    endpointUrl: string,
+    requestJson: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (endpointUrl == null) throw new Error("An endpoint URL is required.");
+
+    const controller = new AbortController();
+    const forwardAbort = (): void => controller.abort(signal?.reason);
+    if (signal != null) {
+      if (signal.aborted) forwardAbort();
+      else signal.addEventListener("abort", forwardAbort, { once: true });
+    }
+    const deadline =
+      this.requestTimeoutMs > 0
+        ? setTimeout(() => controller.abort(new Error("the request deadline elapsed")), this.requestTimeoutMs)
+        : null;
+
+    try {
+      const response = await this.fetchImpl(endpointUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: requestJson ?? "{}",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`the endpoint answered HTTP ${response.status}${statusSuffix(response)}`);
+      }
+      return await response.text();
+    } finally {
+      if (deadline != null) clearTimeout(deadline);
+      if (signal != null) signal.removeEventListener("abort", forwardAbort);
+    }
+  }
+}
+
+function defaultFetch(url: string, init: Parameters<LlmFetch>[1]): Promise<LlmHttpResponse> {
+  return fetch(url, init);
+}
+
+function statusSuffix(response: LlmHttpResponse): string {
+  return response.statusText.length > 0 ? ` ${response.statusText}` : "";
+}
+
+// ----------------------------------------------------------------------------------------------
+// Configuration and the request body
+// ----------------------------------------------------------------------------------------------
+
+export interface LlmConfigInit {
+  endpointUrl?: string;
+  modelName?: string;
+  temperature?: number;
+  maxTokens?: number;
+  requestTimeoutMs?: number;
+}
+
+/**
+ * Everything an LLM agent needs to reach its endpoint. Plain data with defaults aimed at a local LM
+ * Studio server, so it can be owned by a settings dialog or by a headless harness.
+ */
+export class LlmConfig {
+  /** LM Studio's local server, with the chat-completions path spelled out. */
+  static readonly DefaultEndpointUrl = "http://localhost:1234/v1/chat/completions";
+
+  /** The model name the endpoint is asked to serve; LM Studio ignores it when one model is loaded. */
+  static readonly DefaultModelName = "pairflow-player";
+
+  /** Deliberately low, so an NPC that cannot answer is worth less than the deterministic fallback. */
+  static readonly DefaultRequestTimeoutMs = 5000;
+
+  endpointUrl: string;
+  modelName: string;
+  temperature: number;
+  maxTokens: number;
+  requestTimeoutMs: number;
+
+  constructor(init: LlmConfigInit = {}) {
+    this.endpointUrl = init.endpointUrl ?? LlmConfig.DefaultEndpointUrl;
+    this.modelName = init.modelName ?? LlmConfig.DefaultModelName;
+    this.temperature = init.temperature ?? 0.2;
+    this.maxTokens = init.maxTokens ?? 256;
+    this.requestTimeoutMs = init.requestTimeoutMs ?? LlmConfig.DefaultRequestTimeoutMs;
+  }
+}
+
+/**
+ * Builds the OpenAI-compatible chat-completions request body. Serialized through `JSON.stringify`
+ * rather than hand-rolled string concatenation: the escaping rules of both are the same, and the key
+ * order is fixed here so the body stays diffable against the reference implementation's.
+ */
+export function buildLlmChatRequest(
+  config: LlmConfig | null,
+  systemPrompt: string | null,
+  userPrompt: string | null,
+): string {
+  const effective = config ?? new LlmConfig();
+  return JSON.stringify({
+    model: effective.modelName ?? "",
+    temperature: Math.round((effective.temperature ?? 0) * 1000) / 1000,
+    max_tokens: effective.maxTokens ?? 0,
+    stream: false,
+    messages: [
+      { role: "system", content: systemPrompt ?? "" },
+      { role: "user", content: userPrompt ?? "" },
+    ],
+  });
+}
+
+// ----------------------------------------------------------------------------------------------
+// Reading the model's answer
+// ----------------------------------------------------------------------------------------------
+
+/**
+ * Reads a chat-completion response down to the decision object the agent's prompt asked for:
+ * `{"move_index": N, "reasoning": "..."}` or `{"reroll": true, "reasoning": "..."}`.
+ *
+ * Every method here is total: a chatty, truncated or hostile answer yields `null` and never throws,
+ * which is what lets the agent fall back to the heuristic instead of failing the match. "Unreadable"
+ * therefore covers every way `JSON.parse` can refuse a candidate. Accepted shapes, in order of
+ * preference:
+ *
+ * 1. the OpenAI envelope (`choices[0].message.content`, a string or a text-parts array),
+ * 2. its content wrapped in a Markdown fence (```` ```json ... ``` ````),
+ * 3. a plain body that is the decision object itself,
+ * 4. any of the above with conversational prose around the JSON object.
+ */
+export class LlmResponseParser {
+  static readonly MoveIndexKey = "move_index";
+  static readonly MoveIndexCamelKey = "moveIndex";
+  static readonly RerollKey = "reroll";
+  static readonly ReasoningKey = "reasoning";
+
+  /**
+   * The move index the model named, or `null` when it named none that is inside
+   * `[0, legalMoveCount)`. An index that is present but unreadable, negative or out of range is a
+   * rejection, not a clue: the caller falls back to the heuristic rather than guessing what the model
+   * meant.
+   */
+  static tryParseMoveIndex(responseBody: string | null, legalMoveCount: number): number | null {
+    if (legalMoveCount <= 0) return null;
+
+    const decision = findDecision(responseBody, [LlmResponseParser.MoveIndexKey, LlmResponseParser.MoveIndexCamelKey]);
+    if (decision === undefined) return null;
+
+    const index = readInt(decision);
+    if (index == null) return null;
+    if (index < 0 || index >= legalMoveCount) return null;
+    return index;
+  }
+
+  /** The re-roll answer the model gave, or `null` when it did not give a usable one. */
+  static tryParseReroll(responseBody: string | null): boolean | null {
+    const decision = findDecision(responseBody, [LlmResponseParser.RerollKey]);
+    if (decision === undefined) return null;
+    return readBool(decision);
+  }
+
+  /** The model's own explanation, when it sent one. `null` when it did not. */
+  static readReasoning(responseBody: string | null): string | null {
+    const reasoning = findDecision(responseBody, [LlmResponseParser.ReasoningKey]);
+    return reasoning === undefined ? null : readString(reasoning);
+  }
+
+  /**
+   * The text the decision lives in: the first message content of a chat-completion envelope, or the
+   * body itself when it is not an envelope (or is an unreadable one).
+   */
+  static decisionText(responseBody: string | null): string | null {
+    if (responseBody == null || responseBody.length === 0) return null;
+
+    // A body that is not a readable chat-completion envelope is its own decision text: the object the
+    // agent is after may still be in there (or nowhere at all), and the extraction below decides that.
+    const root = tryParseObject(responseBody);
+    if (root == null) return responseBody;
+
+    const choices = root["choices"];
+    if (!Array.isArray(choices)) return responseBody;
+
+    const first = choices[0];
+    if (!isJsonObject(first)) return responseBody;
+
+    const message = first["message"];
+    if (!isJsonObject(message)) return responseBody;
+
+    const text = contentText(message["content"]);
+    return text == null || text.length === 0 ? responseBody : text;
+  }
+
+  /**
+   * The balanced `{ ... }` objects in `text`, outermost first and including nested ones, with braces
+   * inside strings ignored. Scanning rather than parsing means prose, fences and truncated tails around
+   * the object do not have to be understood.
+   */
+  static objectCandidates(text: string | null): string[] {
+    const candidates: string[] = [];
+    if (text == null || text.length === 0) return candidates;
+
+    for (let start = 0; start < text.length; start++) {
+      if (text[start] !== "{") continue;
+
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = start; i < text.length; i++) {
+        const c = text[i];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (c === "\\") {
+            escaped = true;
+            continue;
+          }
+          if (c === '"') inString = false;
+          continue;
+        }
+
+        if (c === '"') {
+          inString = true;
+          continue;
+        }
+        if (c === "{") {
+          depth++;
+          continue;
+        }
+        if (c !== "}") continue;
+
+        depth--;
+        if (depth !== 0) continue;
+
+        candidates.push(text.slice(start, i + 1));
+        break;
+      }
+    }
+    return candidates;
+  }
+}
+
+/** The decision value under the first candidate object that carries one of `keys`. */
+function findDecision(responseBody: string | null, keys: string[]): unknown {
+  const text = LlmResponseParser.decisionText(responseBody);
+  for (const candidate of LlmResponseParser.objectCandidates(text)) {
+    const parsed = tryParseObject(candidate);
+    if (parsed == null) continue;
+
+    // The first object that mentions the key wins even when its value is unusable, so a later object
+    // can never be mistaken for the answer the model actually gave.
+    for (const key of keys) {
+      if (Object.hasOwn(parsed, key)) return parsed[key];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reads a candidate object, folding every way the platform reader can refuse it into one `null`. A
+ * malformed `\u` escape — a model writing `C:\users` inside its reasoning, say — fails exactly like
+ * malformed JSON does, and to a parser that is promised to be total the distinction is meaningless:
+ * either way the text is not the JSON the prompt asked for, so a later candidate still gets its turn
+ * and an answer nobody can read is simply not one.
+ */
+function tryParseObject(candidate: string): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+  return isJsonObject(parsed) ? parsed : null;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Reads a JSON integer, tolerating the quoted form some small models emit. */
+function readInt(value: unknown): number | null {
+  if (typeof value === "number") {
+    if (!Number.isInteger(value)) return null; // "1.5" is not a move index
+    if (!Number.isSafeInteger(value)) return null;
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return /^[+-]?\d+$/.test(trimmed) ? Number.parseInt(trimmed, 10) : null;
+  }
+  return null;
+}
+
+/** Reads a JSON boolean, tolerating the quoted form some small models emit. */
+function readBool(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+  }
+  return null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** The content of a message: a plain string, or the concatenated text parts of a multimodal one. */
+function contentText(content: unknown): string | null {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+
+  let out = "";
+  for (const part of content) {
+    if (!isJsonObject(part)) continue;
+    const text = part["text"];
+    if (typeof text === "string") out += text;
+  }
+  return out;
+}
+
+// ----------------------------------------------------------------------------------------------
+// The agent
+// ----------------------------------------------------------------------------------------------
+
+export class LlmPlayerAgent implements PlayerAgent {
+  /** Role prompt for a move decision. The JSON shape is repeated in the user turn next to the board. */
+  static readonly MoveSystemPrompt =
+    "You are a Sáhkku player. You will be given the board, the dice in spending order and the " +
+    "numbered list of legal moves for the current player.\n" +
+    "Choose the strongest move and answer with one JSON object and nothing else.";
+
+  /** Role prompt for the optional re-roll decision. */
+  static readonly RerollSystemPrompt =
+    "You are a Sáhkku player. You may throw the sáhkku die again, or keep the dice and play on.\n" +
+    "Decide and answer with one JSON object and nothing else.";
+
+  /** Appended to the formatted state for a move decision (the contract the parser enforces). */
+  static readonly MoveInstruction =
+    '\nChoose one move. Answer ONLY with JSON: {"move_index": <number>, "reasoning": "<short reason>"}';
+
+  /** Appended to the formatted state for a re-roll decision (the contract the parser enforces). */
+  static readonly RerollInstruction =
+    '\nShould the sáhkku die be thrown again? Answer ONLY with JSON: {"reroll": <true|false>, "reasoning": "<short reason>"}';
+
+  readonly owner: PieceOwner;
+  readonly name: string;
+
+  private readonly transport: LlmTransport | null;
+  private readonly config: LlmConfig;
+  private readonly engine: RulesEngine | null;
+  private readonly log: ((message: string) => void) | null;
+
+  /**
+   * @param engine The authority the fallback and the re-roll question consult. May be null only for tests.
+   * @param log Optional sink for the agent's decisions and fallbacks (a benchmark passes a counter).
+   */
+  constructor(
+    owner: PieceOwner,
+    name: string | null = null,
+    transport: LlmTransport | null = null,
+    config: LlmConfig | null = null,
+    engine: RulesEngine | null = null,
+    log: ((message: string) => void) | null = null,
+  ) {
+    this.owner = owner;
+    this.name = name ?? "LLM NPC";
+    this.transport = transport;
+    this.config = config ?? new LlmConfig();
+    this.engine = engine;
+    this.log = log;
+  }
+
+  async decideReroll(state: GameState, signal?: AbortSignal): Promise<RerollDecision> {
+    // The engine decides whether a re-roll is even on offer; when it is not, there is nothing to ask.
+    if (this.engine != null && state != null && !this.engine.canReroll(state)) {
+      return RerollDecision.KeepDiceAndProceed;
+    }
+
+    if (this.transport == null) {
+      this.writeLog("no endpoint is configured; deciding heuristically.");
+      return HeuristicPlayerAgent.chooseReroll(this.engine, state);
+    }
+
+    try {
+      throwIfAborted(signal);
+
+      const prompt = this.buildRerollPrompt(state);
+      const requestJson = buildLlmChatRequest(
+        this.config,
+        LlmPlayerAgent.RerollSystemPrompt,
+        prompt,
+      );
+      const responseJson = await this.transport.postChatCompletion(
+        this.config.endpointUrl,
+        requestJson,
+        signal,
+      );
+
+      const reroll = LlmResponseParser.tryParseReroll(responseJson);
+      if (reroll != null) {
+        this.writeLog(
+          `chose to ${reroll ? "throw the sáhkku die again" : "keep the dice"}${this.reasoningSuffix(responseJson)}`,
+        );
+        return reroll ? RerollDecision.RerollActiveDie : RerollDecision.KeepDiceAndProceed;
+      }
+
+      this.writeLog("the endpoint did not answer with a usable reroll decision; deciding heuristically.");
+    } catch (error) {
+      // The match ended while the model was thinking. That is the controller's contract, not a model
+      // failure, so it propagates instead of being absorbed by the fallback below. A timeout lands in
+      // the *transport's* own deadline, which never sets the caller's signal, so it still recovers.
+      if (signal?.aborted === true) throw error;
+      this.writeLog(`the reroll request failed (${errorMessage(error)}); deciding heuristically.`);
+    }
+
+    return HeuristicPlayerAgent.chooseReroll(this.engine, state);
+  }
+
+  async decideMove(
+    state: GameState,
+    legalMoves: readonly Move[],
+    signal?: AbortSignal,
+  ): Promise<Move | null> {
+    if (legalMoves.length === 0) return null;
+
+    // A forced move is not a decision: the engine left exactly one option, so skip the round trip.
+    if (legalMoves.length === 1) return legalMoves[0];
+
+    if (this.transport == null) {
+      this.writeLog("no endpoint is configured; playing the heuristic choice.");
+      return HeuristicPlayerAgent.chooseMove(this.engine, state, legalMoves);
+    }
+
+    try {
+      throwIfAborted(signal);
+
+      const prompt = GameStateFormatter.formatPromptContext(state, legalMoves) + LlmPlayerAgent.MoveInstruction;
+      const requestJson = buildLlmChatRequest(this.config, LlmPlayerAgent.MoveSystemPrompt, prompt);
+      const responseJson = await this.transport.postChatCompletion(
+        this.config.endpointUrl,
+        requestJson,
+        signal,
+      );
+
+      const moveIndex = LlmResponseParser.tryParseMoveIndex(responseJson, legalMoves.length);
+      if (moveIndex != null) {
+        // The index was checked against the count of the list the engine just produced, so the move is
+        // legal by construction: no proposal the model makes can bypass the engine.
+        const move = legalMoves[moveIndex];
+        this.writeLog(
+          `chose move ${moveIndex} of ${legalMoves.length} (${move})${this.reasoningSuffix(responseJson)}`,
+        );
+        return move;
+      }
+
+      this.writeLog("the endpoint did not answer with a usable move index; playing the heuristic choice.");
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      this.writeLog(`the move request failed (${errorMessage(error)}); playing the heuristic choice.`);
+    }
+
+    return HeuristicPlayerAgent.chooseMove(this.engine, state, legalMoves);
+  }
+
+  /**
+   * The re-roll question, projected from the authoritative state: the board and the dice as the shared
+   * formatter renders them, plus the moves the throw would offer if the dice were kept — which is
+   * exactly what the decision turns on.
+   */
+  private buildRerollPrompt(state: GameState): string {
+    const movesIfKept = this.engine == null || state == null ? [] : this.engine.legalMoves(state);
+    return GameStateFormatter.formatPromptContext(state, movesIfKept) + LlmPlayerAgent.RerollInstruction;
+  }
+
+  /** The model's own reason, appended to the decision log when it sent one. */
+  private reasoningSuffix(responseJson: string): string {
+    if (this.log == null) return "";
+    const reasoning = LlmResponseParser.readReasoning(responseJson);
+    return reasoning == null || reasoning.length === 0 ? "" : `: ${reasoning}`;
+  }
+
+  private writeLog(message: string): void {
+    if (this.log != null) this.log(`${this.name}: ${message}`);
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) {
+    throw signal.reason ?? new Error("The decision was cancelled.");
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
