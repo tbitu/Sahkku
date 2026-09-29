@@ -15,6 +15,10 @@ reasonix.toml
 Tools/**/bin/
 Tools/**/obj/
 
+# Node tooling for the TypeScript rules core: dependencies and test output.
+node_modules/
+coverage/
+
 # Editor and OS cruft.
 .DS_Store
 Thumbs.db

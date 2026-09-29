@@ -5,7 +5,7 @@ task_family_id: ts-rules-core-and-tests
 sequence_key: "1"
 task_id: 1-ts-rules-core-and-tests
 title: "Port Pure Rules Core and Test Suite (139 Tests) to TypeScript and Vitest"
-status: approved
+status: archived
 phase: implementation
 target_files:
   - package.json
