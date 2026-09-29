@@ -5,7 +5,7 @@ task_family_id: open-2d-web-board-frontend
 sequence_key: "3"
 task_id: 3-open-2d-web-board-frontend
 title: "Build Open-License 2D Web Board Game Interface with Vite and 2D Dice Roller"
-status: approved
+status: archived
 phase: implementation
 target_files:
   - package.json

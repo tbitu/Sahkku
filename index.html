@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="Digital Sáhkku — an open-license 2D web board for the traditional Sámi running-fight game."
+    />
+    <meta name="color-scheme" content="dark" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%236d4522'/%3E%3Cpath d='M9 9 L23 23 M23 9 L9 23' stroke='%23f6c778' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/src/ui/style.css" />
+    <title>Digital Sáhkku — 2D Board</title>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="app-header">
+        <div class="app-title">
+          <h1>Sáhkku</h1>
+          <p class="app-subtitle">
+            Traditional Sámi running-fight board game — open-license 2D client
+          </p>
+        </div>
+        <div class="app-header-actions">
+          <button type="button" class="button button--ghost" id="restart-button">
+            New game
+          </button>
+        </div>
+      </header>
+
+      <main class="tabletop">
+        <section class="panel panel--board" aria-label="Board">
+          <div class="status-bar" id="status-bar" role="status" aria-live="polite"></div>
+          <div class="banner" id="banner" role="log" aria-live="polite" hidden></div>
+          <div
+            class="board"
+            id="board"
+            role="group"
+            aria-label="Sáhkku board: three rows of fifteen carved cells"
+          ></div>
+          <div class="legend" id="legend" aria-label="Piece legend"></div>
+        </section>
+
+        <aside class="panel panel--dice" aria-label="Dice tray">
+          <h2 class="panel-title">Sáhkku dice</h2>
+          <div class="dice-tray" id="dice-tray"></div>
+          <div class="dice-actions" id="dice-actions"></div>
+          <p class="dice-hint">
+            Faces: <span class="dice-hint-mark">X</span> one step / activate / reroll ·
+            <span class="dice-hint-mark">III</span> three steps ·
+            <span class="dice-hint-mark">II</span> two steps ·
+            <span class="dice-hint-mark">·</span> blank
+          </p>
+        </aside>
+      </main>
+
+      <footer class="app-footer">
+        <p>
+          Sáhkku is a traditional game of the Sámi people. Rules engine, agents and this 2D client
+          are open source.
+        </p>
+      </footer>
+    </div>
+
+    <div class="modal-root" id="modal-root"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

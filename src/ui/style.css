@@ -1,0 +1,833 @@
+/*
+ * Styling for the open-license 2D Sáhkku client.
+ *
+ * Everything is drawn with CSS and inline SVG — no 3D runtime, no WebGL, no external fonts or
+ * textures. The board is a fluid CSS grid whose column count comes from the ruleset through the
+ * `--board-columns` custom property, so the layout follows the data rather than a hardcoded 15.
+ */
+
+:root {
+  --wood-deep: #3d2413;
+  --wood-mid: #6d4522;
+  --wood-light: #a1703c;
+  --wood-carve: #38200f;
+  --wood-line: #2a170a;
+
+  --ink: #f4ead9;
+  --ink-dim: #c9b79a;
+
+  --p1-main: #d98b2b;
+  --p1-dark: #8f3a22;
+  --p1-light: #f6c778;
+
+  --p2-main: #3f6fbf;
+  --p2-dark: #1f4a8c;
+  --p2-light: #8fc0f2;
+
+  --royal: #e8d9a8;
+  --neutral: #b3b7bb;
+  --neutral-dark: #6f757a;
+
+  --highlight: #7fe0a5;
+  --selected: #ffd76a;
+
+  --radius: 14px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #4a2c17 0%, #2a190d 55%, #1b1008 100%);
+  color: var(--ink);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ------------------------------------------------------------------ app shell */
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.app-title h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--p1-light);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.app-subtitle {
+  margin: 0.15rem 0 0;
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+
+.app-footer {
+  color: var(--ink-dim);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.app-footer p {
+  margin: 0;
+}
+
+.tabletop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 1rem;
+  align-items: start;
+}
+
+.panel {
+  background: linear-gradient(180deg, #4a2d17 0%, #38200f 100%);
+  border: 1px solid rgba(255, 226, 178, 0.14);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.9rem;
+  min-width: 0;
+}
+
+.panel-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--p1-light);
+}
+
+.panel--board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+/* ------------------------------------------------------------------ status & banner */
+
+.status-bar {
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 226, 178, 0.12);
+  font-size: 0.95rem;
+  min-height: 2.4rem;
+  display: flex;
+  align-items: center;
+}
+
+.banner {
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(127, 224, 165, 0.14);
+  border: 1px solid rgba(127, 224, 165, 0.35);
+  color: #dcffe9;
+  font-size: 0.9rem;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ board */
+
+.board {
+  display: grid;
+  grid-template-columns: auto repeat(var(--board-columns, 15), minmax(0, 1fr));
+  /* Cells carry their own aspect ratio, so the rows must not stretch them out of shape. */
+  align-items: start;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(
+      92deg,
+      rgba(0, 0, 0, 0.1) 0 3px,
+      rgba(255, 255, 255, 0.035) 3px 9px
+    ),
+    linear-gradient(180deg, var(--wood-light) 0%, var(--wood-mid) 45%, var(--wood-deep) 100%);
+  border: 3px solid var(--wood-line);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.55);
+}
+
+.row-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: stretch;
+  padding-right: 0.45rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f0d9b0;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: right;
+  min-width: 1.1rem;
+  max-width: 1.6rem;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(42, 23, 10, 0.85);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #8a5c2e 0%, #6b4420 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 226, 178, 0.16),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.4);
+  cursor: default;
+  overflow: hidden;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: 1px;
+}
+
+/*
+ * Row identity, so the two home rows read differently from the shared middle row they both cross.
+ * These come before the state rules below, which are meant to win.
+ */
+.cell[data-row="home"] {
+  background: linear-gradient(180deg, #96642f 0%, #734a25 100%);
+}
+
+.cell[data-row="middle"] {
+  background: linear-gradient(180deg, #7a4f26 0%, #5a3819 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 226, 178, 0.1),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.5);
+}
+
+.cell.is-actionable {
+  cursor: pointer;
+}
+
+.cell.is-actionable:hover {
+  background: linear-gradient(180deg, #9c6a37 0%, #7a4e25 100%);
+}
+
+.cell.has-piece {
+  background: linear-gradient(180deg, #7d5228 0%, #5f3c1c 100%);
+}
+
+/* A legal destination of the currently selected piece. */
+.cell.is-highlight {
+  background: linear-gradient(180deg, #3f6b4c 0%, #2b4b35 100%);
+  box-shadow:
+    inset 0 0 0 2px var(--highlight),
+    0 0 12px rgba(127, 224, 165, 0.45);
+}
+
+.cell.is-highlight::after {
+  content: "";
+  position: absolute;
+  inset: 34%;
+  border-radius: 50%;
+  background: rgba(127, 224, 165, 0.85);
+  box-shadow: 0 0 10px rgba(127, 224, 165, 0.9);
+  pointer-events: none;
+}
+
+.cell.is-selected {
+  box-shadow:
+    inset 0 0 0 2px var(--selected),
+    0 0 12px rgba(255, 215, 106, 0.5);
+}
+
+/* Carved ornamentation: an X cut into the wood of the sacred cells. */
+.carving-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.carving {
+  position: absolute;
+  color: var(--wood-carve);
+  opacity: 0.5;
+}
+
+.carving::before,
+.carving::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transform-origin: center;
+}
+
+.carving::before {
+  transform: rotate(45deg);
+}
+
+.carving::after {
+  transform: rotate(-45deg);
+}
+
+.carving--turning {
+  inset: 8%;
+  opacity: 0.34;
+}
+
+.carving--king {
+  inset: 22%;
+  color: #f6e2b4;
+  opacity: 0.55;
+}
+
+.carving--queen {
+  inset: 22%;
+  color: #e6cfa4;
+  opacity: 0.45;
+}
+
+.cell-pieces {
+  position: absolute;
+  inset: 4%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.stack-badge {
+  position: absolute;
+  right: -2%;
+  bottom: 2%;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: #1b1008;
+  border: 1px solid rgba(255, 226, 178, 0.5);
+  color: #ffeccb;
+  font-size: clamp(0.5rem, 1.1vw, 0.7rem);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* ------------------------------------------------------------------ pieces */
+
+.piece {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55));
+  transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+/* A piece still seated in its home row: smaller, dimmer, resting lower. */
+.piece--inactive {
+  transform: translateY(6%) scale(0.74);
+  opacity: 0.72;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5)) saturate(0.7);
+}
+
+/* An activated piece: raised and bright. */
+.piece--active {
+  transform: translateY(-4%);
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.6)) saturate(1.1);
+}
+
+.piece--selected {
+  transform: translateY(-8%) scale(1.06);
+  filter: drop-shadow(0 0 8px var(--selected)) saturate(1.15);
+}
+
+.piece--p1 .piece-body {
+  fill: var(--p1-main);
+  stroke: var(--p1-dark);
+}
+
+.piece--p1 .piece-shade {
+  fill: var(--p1-dark);
+  opacity: 0.55;
+}
+
+.piece--p2 .piece-body {
+  fill: var(--p2-main);
+  stroke: var(--p2-dark);
+}
+
+.piece--p2 .piece-shade {
+  fill: var(--p2-dark);
+  opacity: 0.55;
+}
+
+.piece--neutral .piece-body {
+  fill: var(--neutral);
+  stroke: var(--neutral-dark);
+}
+
+.piece--neutral .piece-shade {
+  fill: var(--neutral-dark);
+  opacity: 0.6;
+}
+
+.piece-cap {
+  fill: rgba(255, 255, 255, 0.34);
+}
+
+.piece-crown {
+  fill: var(--royal);
+  stroke: #3a2405;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.piece--p1 .piece-crown {
+  stroke: var(--p1-dark);
+}
+
+.piece--p2 .piece-crown {
+  stroke: var(--p2-dark);
+}
+
+.piece--neutral .piece-crown {
+  stroke: var(--neutral-dark);
+}
+
+.piece-insignia {
+  fill: #2a1a06;
+  opacity: 0.55;
+}
+
+.piece--p2 .piece-insignia,
+.piece--neutral .piece-insignia {
+  fill: #0e1c2e;
+}
+
+.piece-ring {
+  fill: none;
+  stroke: var(--selected);
+  stroke-width: 3;
+  opacity: 0;
+}
+
+.piece--selected .piece-ring {
+  opacity: 1;
+}
+
+.piece--king .piece-aura {
+  fill: currentColor;
+  opacity: 0.18;
+}
+
+.piece--p1.piece--king {
+  color: var(--p1-main);
+}
+
+.piece--p2.piece--king {
+  color: var(--p2-main);
+}
+
+.piece--neutral.piece--king {
+  color: var(--neutral);
+}
+
+/* ------------------------------------------------------------------ legend */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.1rem;
+  font-size: 0.72rem;
+  color: var(--ink-dim);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: 0 0 auto;
+}
+
+/* The legend's carving swatch reuses the board's X mark. */
+.legend-swatch--carving {
+  position: relative;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #8a5c2e 0%, #6b4420 100%);
+  box-shadow: inset 0 0 0 1px rgba(42, 23, 10, 0.85);
+}
+
+.legend-swatch--carving::before,
+.legend-swatch--carving::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 50%;
+  height: 2px;
+  background: var(--wood-carve);
+  border-radius: 1px;
+}
+
+.legend-swatch--carving::before {
+  transform: rotate(45deg);
+}
+
+.legend-swatch--carving::after {
+  transform: rotate(-45deg);
+}
+
+/* ------------------------------------------------------------------ dice */
+
+.panel--dice {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.dice-tray {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 8.5rem;
+  padding: 0.6rem 0.2rem;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, rgba(255, 255, 255, 0.03) 2px 7px),
+    linear-gradient(180deg, #33200f 0%, #24150a 100%);
+  border: 1px solid rgba(255, 226, 178, 0.12);
+}
+
+.dice-order {
+  font-size: 0.72rem;
+  color: var(--ink-dim);
+  text-align: center;
+  margin: 0;
+}
+
+.die {
+  position: relative;
+  flex: 0 1 3.4rem;
+  max-width: 3.6rem;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.die--active {
+  transform: translateY(-0.4rem) scale(1.06);
+}
+
+.die--spent {
+  opacity: 0.42;
+  transform: scale(0.9) translateY(0.25rem);
+}
+
+.die-order {
+  position: absolute;
+  top: -0.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #1b1008;
+  background: var(--royal);
+  border-radius: 999px;
+  padding: 0 0.34rem;
+  line-height: 1.4;
+}
+
+.die--active .die-order {
+  background: var(--highlight);
+}
+
+.die--spent .die-order {
+  background: var(--neutral-dark);
+  color: #f0f0f0;
+}
+
+.die-shape {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.die-body {
+  fill: #e8d3ab;
+  stroke: #6b4a22;
+  stroke-width: 2;
+}
+
+.die-cap {
+  fill: #f7ead0;
+  stroke: #6b4a22;
+  stroke-width: 2;
+}
+
+.die-foot {
+  fill: #c3a878;
+  stroke: #6b4a22;
+  stroke-width: 2;
+}
+
+.die-mark {
+  stroke: #4a2c11;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+}
+
+.die--active .die-body {
+  fill: #f7e7c4;
+  stroke: var(--highlight);
+}
+
+.die-blank {
+  font-size: 0.62rem;
+  fill: #7d6a4c;
+}
+
+/* The whole tray shakes while a throw is landing. */
+.dice-tray.is-rolling .die {
+  animation: die-roll 480ms ease-in-out;
+}
+
+.dice-tray.is-rolling .die:nth-child(2) {
+  animation-delay: 70ms;
+}
+
+.dice-tray.is-rolling .die:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+@keyframes die-roll {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-18%) rotate(-14deg);
+  }
+  60% {
+    transform: translateY(8%) rotate(12deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-tray.is-rolling .die {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.dice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.button {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: 2px;
+}
+
+.button--primary {
+  background: linear-gradient(180deg, #e0a04a 0%, #b9772c 100%);
+  border-color: #f4cf90;
+  color: #2a1707;
+}
+
+.button--secondary {
+  background: linear-gradient(180deg, #3f6fbf 0%, #2b4f8c 100%);
+  border-color: #8fc0f2;
+  color: #f2f7ff;
+}
+
+.button--ghost {
+  background: rgba(255, 226, 178, 0.08);
+  border-color: rgba(255, 226, 178, 0.35);
+  color: var(--ink);
+  width: auto;
+  padding: 0.45rem 0.9rem;
+}
+
+.dice-hint {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--ink-dim);
+  line-height: 1.6;
+}
+
+.dice-hint-mark {
+  display: inline-block;
+  min-width: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 4px;
+  background: rgba(255, 226, 178, 0.12);
+  color: #f7e7c4;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ game over modal */
+
+.modal-root:empty {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(10, 6, 3, 0.72);
+  z-index: 50;
+}
+
+.modal-card {
+  width: min(28rem, 100%);
+  padding: 1.4rem;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #573420 0%, #38200f 100%);
+  border: 1px solid rgba(255, 226, 178, 0.28);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.modal-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.4rem;
+  color: var(--p1-light);
+  letter-spacing: 0.04em;
+}
+
+.modal-body {
+  margin: 0 0 1rem;
+  color: var(--ink-dim);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.modal-actions .button {
+  width: auto;
+  min-width: 10rem;
+}
+
+/* ------------------------------------------------------------------ responsive */
+
+@media (max-width: 900px) {
+  .tabletop {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel--dice {
+    position: static;
+  }
+
+  .dice-tray {
+    min-height: 7rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .app {
+    padding: 0.6rem 0.5rem 1.5rem;
+  }
+
+  .board {
+    gap: 0.18rem;
+    padding: 0.4rem;
+    border-width: 2px;
+  }
+
+  .row-label {
+    font-size: 0.55rem;
+    min-width: 0.8rem;
+  }
+
+  .stack-badge {
+    font-size: 0.5rem;
+  }
+
+  .dice-tray {
+    gap: 0.4rem;
+    min-height: 6rem;
+  }
+
+  .die {
+    flex-basis: 2.6rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .board {
+    gap: 0.12rem;
+    padding: 0.3rem;
+  }
+}
