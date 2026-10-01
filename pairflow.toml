@@ -11,8 +11,8 @@ test = "dotnet test Tools/RulesTests/RulesTests.csproj"
 bootstrap = "dotnet restore Tools/RulesTests/RulesTests.csproj"
 
 [defaults.agents]
-reviewer = "opencode"
-reviewer_model = "lmstudio/pairflow-reviewer"
+reviewer = "reasonix"
+reviewer_model = "deepseek-flash"
 implementer = "reasonix"
 implementer_model = "deepseek-flash"
 meta_reviewer = "opencode"
