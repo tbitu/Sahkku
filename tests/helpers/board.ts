@@ -1,6 +1,6 @@
 /**
- * Test doubles shared by the agent and benchmark suites — the same `Board` and ruleset loader the C#
- * fixtures share out of `RulesTests.cs` and `TestRuleset.cs`.
+ * Test doubles shared by the agent and benchmark suites — the same `Board` and ruleset loader the
+ * retired C# fixtures shared.
  *
  * A `Board` starts from a real `initGame` and then empties every place, so a test can place exactly the
  * pieces its scenario needs while the engine, the track and the ruleset stay the shipped ones.

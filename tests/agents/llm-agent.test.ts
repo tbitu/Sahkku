@@ -1,6 +1,5 @@
 /**
- * Vitest port of `Sahkku/Assets/Tests/Rules/LlmAgentTests.cs` and the reading half of
- * `LlmConfigTests.cs`.
+ * Vitest port of the retired C# `LlmAgentTests` suite and the reading half of `LlmConfigTests`.
  *
  * Everything here runs offline: the endpoint is a scripted `LlmTransport`, so the fallback matrix (HTTP
  * error, timeout, malformed answer, out-of-range index, cancellation) is pinned without a model or a

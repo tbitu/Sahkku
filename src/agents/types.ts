@@ -1,6 +1,6 @@
 /**
- * The player-agent contract: a 1:1 port of `IHumanInteraction`, `IBotRandomSource` and `IPlayerAgent`
- * from `Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs`.
+ * The player-agent contract: the 1:1 port of the retired C# `IHumanInteraction`, `IBotRandomSource`
+ * and `IPlayerAgent` interfaces.
  *
  * An agent is the only thing that *decides*; the rules engine remains the sole authority over what is
  * legal (see the plan's control model). Nothing in here depends on a host, a renderer or a socket, so

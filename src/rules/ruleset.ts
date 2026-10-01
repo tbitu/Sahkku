@@ -1,12 +1,12 @@
 /**
- * The data-driven ruleset: a 1:1 port of `Sahkku/Assets/Scripts/Rules/RuleSet.cs` and
- * `Json.cs` (the reflection-free `RuleSetJson.FromJson` mapper).
+ * The data-driven ruleset: the 1:1 port of the retired C# `RuleSet` and its reflection-free
+ * `RuleSetJson.FromJson` mapper.
  *
  * `SahkkuRules.json` stays the single authoritative specification of the game: the engine only ever
  * consults the primitives this file declares, and `validate()` refuses a ruleset that is incomplete
  * or internally inconsistent.
  *
- * The C# original ships a hand-written JSON reader to stay IL2CPP/WebGL-safe; here the platform's
+ * The C# original shipped a hand-written JSON reader to stay IL2CPP/WebGL-safe; here the platform's
  * `JSON.parse` does that job, so only the schema mapping and the validation are ported.
  */
 
@@ -595,7 +595,7 @@ export class RuleSet {
 }
 
 // ----------------------------------------------------------------------------------------------
-// JSON mapping (ported from Json.cs)
+// JSON mapping (ported from the retired C# JSON reader)
 // ----------------------------------------------------------------------------------------------
 
 /** Maps the ruleset JSON onto `RuleSet` (explicit, reflection-free). */
@@ -638,8 +638,8 @@ export class RuleSetJson {
 
 /**
  * The shipped ruleset, imported so the engine, the browser bundle and the tests all read the very
- * same file: `src/rules/SahkkuRules.json` is a verbatim copy of the canonical
- * `Sahkku/Assets/Resources/SahkkuRules.json` (asserted by the test suite).
+ * same file: `src/rules/SahkkuRules.json` is the single authoritative document, and the test suite
+ * pins its sha256 so a change to it is always a deliberate edit.
  */
 export const shippedRulesetJson = sahkkuRulesJson as unknown as Record<string, unknown>;
 

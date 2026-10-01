@@ -6,13 +6,13 @@ required = ["build"]
 meta_review_approve_required = ["test"]
 
 [validation.commands]
-build = "dotnet build Tools/RulesTests/RulesTests.csproj"
-test = "dotnet test Tools/RulesTests/RulesTests.csproj"
-bootstrap = "dotnet restore Tools/RulesTests/RulesTests.csproj"
+build = "npm run build"
+test = "npm test"
+bootstrap = "npm install"
 
 [defaults.agents]
-reviewer = "opencode"
-reviewer_model = "lmstudio/pairflow-reviewer"
+reviewer = "reasonix"
+reviewer_model = "deepseek-flash"
 implementer = "reasonix"
 implementer_model = "deepseek-flash"
 meta_reviewer = "opencode"

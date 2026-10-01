@@ -2,7 +2,7 @@
   "name": "sahkku-playwright-tests",
   "version": "1.0.0",
   "private": true,
-  "description": "Playwright end-to-end verification of the Sahkku Unity WebGL build.",
+  "description": "Playwright end-to-end verification of the Sahkku 2D web client.",
   "scripts": {
     "test": "playwright test"
   },

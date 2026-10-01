@@ -2,7 +2,7 @@
   "name": "sahkku",
   "version": "0.1.0",
   "private": true,
-  "description": "Digital Sahkku - pure TypeScript rules core (ported from Sahkku.Rules) with an open-license 2D web board",
+  "description": "Digital Sahkku - a pure TypeScript rules core with an open-license 2D web board",
   "type": "module",
   "license": "SEE LICENSE IN License.txt",
   "scripts": {
@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "npm --prefix Tools/PlaywrightTests test",
     "typecheck": "tsc --noEmit",
     "bench": "tsx src/cli/cli.ts"
   },

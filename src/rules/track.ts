@@ -1,5 +1,5 @@
 /**
- * Track geometry: a 1:1 port of `Sahkku/Assets/Scripts/Rules/Track.cs`.
+ * Track geometry: the 1:1 port of the retired C# `Track`.
  *
  * A lap visits `legs.length * board.width` cells and the middle row is visited twice per lap, so two
  * arcs map onto the same board cell. A piece therefore stores its arc (see `Piece.arc`) and

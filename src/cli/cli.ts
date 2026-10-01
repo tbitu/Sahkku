@@ -1,5 +1,6 @@
 /**
- * The headless entry point of the benchmark tool: a 1:1 port of `Tools/SahkkuBench/Program.cs`.
+ * The headless entry point of the benchmark tool: a rewrite of the retired C# console app's
+ * `Program` entry point.
  *
  * <pre>
  * npm run bench -- --games 100 --p1 heuristic --p2 random

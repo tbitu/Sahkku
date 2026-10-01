@@ -1,7 +1,7 @@
 # Sáhkku rules: sources, alignment and open questions
 
 This document records **where the executable rules come from**, how the ruleset
-(`Assets/Resources/SahkkuRules.json`) was brought in line with them, and what is still genuinely
+(`src/rules/SahkkuRules.json`) was brought in line with them, and what is still genuinely
 undecided. It is the companion to [rules-engine.md](rules-engine.md), which describes the engine and the
 ruleset schema, and it supersedes the first pass of this analysis (which listed the gaps that are now
 fixed).
@@ -10,8 +10,8 @@ fixed).
 
 | Source | Role |
 | --- | --- |
-| `Sahkku/SahkkuRules.pdf` | The player-facing rules, "Lágesvuon sáhkku with Unjárga king (Vuonnamárkan style)". Opened from the menu by `MenuManager.OpenRules()`. |
-| `Sahkku/SahkkuRegler.pdf` | The same rules in Norwegian. |
+| `SahkkuRules.pdf` | The player-facing rules, "Lágesvuon sáhkku with Unjárga king (Vuonnamárkan style)". It shipped with the retired C#/Unity client and is no longer in this repository; what it said is what the ruleset before you encodes. |
+| `SahkkuRegler.pdf` | The same rules in Norwegian, retired with the same client. |
 | [Reaidu / UiT, "Sáhkku"](https://result.uit.no/reaidu/ressurser/aktiviteter/sahkku/) | The reference collection the PDFs link to, by Mikkel Berg-Nordlie. Contains the Lágesvuon chapter, the Unjárga (Vuonnamárkan) king rule, the "like odds" extra rule, and the movement diagram. |
 | [Wikipedia: Sáhkku](https://en.wikipedia.org/wiki/S%C3%A1hkku) | The other link in the PDF. Contains the Lágesvuotna chapter and the `Sakkhu path norm.svg` track diagram. |
 | [itch.io: Digital Sáhkku](https://zhamul.itch.io/digital-shkku) | The game's own page: confirms the ruleset is the Lágesvuon sáhkku with Unjárga king, "Vuonnamárkan málle", the rules used at the Sáhkku world cup. |
@@ -57,7 +57,7 @@ not be expressed at all. All of the following now come from the JSON:
 
 | Was hard-coded in the engine | Now in the ruleset |
 | --- | --- |
-| Movement was `placeIndex ± steps`, so soldiers fell off the end of the enemy row instead of looping (the readme's first known issue) | `track.legs`, and per-piece `Piece.arc` |
+| Movement was `placeIndex ± steps`, so soldiers fell off the end of the enemy row instead of looping (the old README's first known issue) | `track.legs`, and per-piece `Piece.arc` |
 | The enemy home row was the index range `>= places.Count - width` / `< width` | derived from the track's legs |
 | Unactivated pieces blocked entry through a hard-coded `isActive` check | `inactive.enterable` |
 | Only pieces of type `Soldier` advanced the activation queue | `queuesNextOnActivation` per piece |
@@ -77,23 +77,25 @@ Two further guarantees were added, because the rules can only be *trusted* if th
   two players, no royal sharing its line outside a recruitment, soldier conservation, a winner whenever
   the game is over) and is asserted after every step of two seeded full-game simulations.
 
-The tests run in Unity *and* headlessly (`dotnet test Tools/RulesTests`), so the ruleset is verifiable in
-CI without a Unity installation. `NoSchemaFieldIsLeftUnread` fails if a ruleset key is added that the
-engine never consults.
+The ruleset is verified headlessly (`npm test`), so it needs no game engine or Unity installation.
+`NoSchemaFieldIsLeftUnread` fails if a ruleset key is added that the engine never consults.
 
 The traceability table — one row per rule clause, mapping to the ruleset field and the test that pins it —
 is in [rules-engine.md](rules-engine.md#rule-traceability).
 
 ## 4. Bugs found on the way
 
-* **P2's soldier win showed P1's message.** `GameInteraction` picked the win text from a capture counter
-  and used `Player_1_Win_Soldier` in the player-two branch. The engine now reports `WinReason` and the UI
-  selects one of four correct strings.
+These were found in the C# implementation while it was being ported; each one is fixed in the
+TypeScript code.
+
+* **P2's soldier win showed P1's message.** The C# presentation picked the win text from a capture
+  counter and used `Player_1_Win_Soldier` in the player-two branch. The engine now reports `WinReason`
+  and the client selects one of four correct strings.
 * **Capturing the queen scored a soldier.** The capture counter incremented for the queen too, while the
   UI renders the counter as captured *soldier* models. The counter now only counts soldiers.
-* **`GameInteraction.cs` contained a non-UTF-8 identifier.** `ìnteractionThisFrame` was written as
-  Latin-1 (`0xEC`) in an otherwise ASCII file; any compiler that reads the file as UTF-8 rejects it. The
-  identifier is now plain ASCII and the file is valid UTF-8.
+* **A non-UTF-8 identifier.** `ìnteractionThisFrame` was written as Latin-1 (`0xEC`) in an otherwise
+  ASCII C# file; any compiler that reads the file as UTF-8 rejects it. The TypeScript port does not
+  carry the file.
 * **The enemy-territory king recruitment was silent.** It now emits `KingRecruited`, so the host plays
   the recruitment sound.
 
@@ -112,7 +114,7 @@ each is recorded so that a later change is a decision rather than an accident.
    (which would put the foremost one on the middle row). **Kept: loose in place**, i.e. today's board,
    as chosen when this analysis was commissioned. The rule is now expressed as `soldiersActive`, so
    changing the reading later is a one-line ruleset change and the tests name the chosen behaviour.
-   The readme's note about "the 3 first soldier start from incorrect positions" describes an older bug
+   The old README's note about "the 3 first soldier start from incorrect positions" describes an older bug
    (the same code once placed them as a column across all three rows, which also threw an exception for
    an off-board row); that is fixed.
 3. **What the blank face is worth.** Lágesvuon uses zero ("null flytt"), and the ruleset says 0. Some
@@ -124,14 +126,14 @@ each is recorded so that a later change is a decision rather than an accident.
 5. **Whether a move may jump over pieces.** No source states it either way for this variant, and the
    engine only ever looks at the destination line. Unchanged.
 6. **Who starts.** The rules say the players throw dice and the first to roll an X starts; the game also
-   lets the player choose in the menu. Both are the engine's (`RulesEngine.ThrowForStartingPlayer`,
-   `start.mode`, tested) and the options screen now offers both: "throw for start" hands the choice to
-   that throw, while the manual pick (women or men) is `EngineOptions.startingPlayer`. The manual pick
-   remains the default, so choosing who starts stays a deliberate UX divergence.
-7. **The rules are only on disk.** `MenuManager.OpenRules()` opens `SahkkuRules.pdf` by path, which is
-   why the readme asks for the PDFs to be copied next to a PC build. It also always opens the English
-   PDF, even for the Finnish and Northern Sami locales, although a Norwegian translation
-   (`SahkkuRegler.pdf`) is shipped.
+   lets the player choose in the menu. Both are the engine's (`RulesEngine.throwForStartingPlayer`,
+   `start.mode`, tested) and the setup screen offers both: "throw for start" hands the choice to that
+   throw and is the shipped default, while the manual pick (women or men) is
+   `EngineOptions.startingPlayer`.
+7. **Where the rules live in the client.** The retired Unity build opened `SahkkuRules.pdf` from disk,
+   which is why its README asked for the PDFs to ship next to a build. The 2D client instead renders an
+   illustrated rules dialog (`src/ui/help.ts`) from localized strings and inline SVG, so the rules travel
+   with the client and follow the selected language.
 8. **Can a royal piece be captured?** The English PDF says "In no other circumstance is it legal to
    move another piece onto a `sárggis` occupied by a royal piece", which read literally would make the
    queen uncapturable and render "if you lose your queen, you have lost the game" dead. Reaidu's

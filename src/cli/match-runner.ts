@@ -1,5 +1,5 @@
 /**
- * The headless match runner: a 1:1 port of `Tools/SahkkuBench/MatchRunner.cs`.
+ * The headless match runner: the 1:1 port of the retired C# `MatchRunner`.
  *
  * It drives one game to its end — roll, ask the active agent about the optional re-roll, ask it for its
  * move, hand every action to the engine — and runs off-engine, so a benchmark needs neither a browser nor

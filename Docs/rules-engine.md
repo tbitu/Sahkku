@@ -1,66 +1,66 @@
 # Sáhkku rules engine
 
-The rules of Sáhkku are not hard-coded in a `MonoBehaviour`. They live in a JSON ruleset that is
-interpreted by a pure-C# engine which is shared by the Unity game and by NPC/LLM tooling.
+The rules of Sáhkku are not hard-coded in the client. They live in a JSON ruleset that is interpreted
+by a dependency-free TypeScript engine, shared by the browser game and by the NPC/LLM tooling.
 
 The ruleset is the single source of truth: every rule decision the engine makes is selected by a value
-in `Assets/Resources/SahkkuRules.json`. There is a test (`NoSchemaFieldIsLeftUnread`) that fails when a
-key is added to the JSON that the engine never consults, so a rule can never be written and silently
-ignored.
+in `src/rules/SahkkuRules.json`. There is a test (`NoSchemaFieldIsLeftUnread`) that fails when a key is
+added to the JSON that the engine never consults, so a rule can never be written and silently ignored.
 
 ## Layers
 
-| Layer | Assembly | Unity? | Responsibility |
-| --- | --- | --- | --- |
-| Rules engine | `Sahkku.Rules` (`Assets/Scripts/Rules/`) | no (`noEngineReferences`) | Board/domain types, the track, JSON ruleset parsing, all rule decisions |
-| Unity bridge | `Sahkku.RulesBridge` (`Assets/Scripts/RulesBridge/`) | partly | Loads the ruleset and provides `UnityEngine.Random` sources. `PlayerAgents.cs` (human/random/heuristic agents), `LlmClient.cs` (REST client and structured-output parser) and `LlmPlayerAgent.cs` (the LLM NPC) are engine-free, so they also compile headlessly and are covered by `PlayerAgentTests` and `LlmAgentTests` |
-| Match controller | `Assembly-CSharp` (`Assets/Scripts/GameLogic.cs`) | yes | Owns the match state machine: rolls, asks the active `IPlayerAgent` for the re-roll and the move, and falls back to the heuristic agent when an agent fails. Decides no rule itself |
-| Presentation | `Assembly-CSharp` (`Assets/Scripts/GameInteraction.cs`) | yes | Board/dice rendering, turn banner, input; answers the human half of `IHumanInteraction` |
-| Benchmark tool | `Tools/SahkkuBench` (console app) | no | Plays bot-vs-bot and LLM-vs-bot matches through the engine, applies the turn-cap/timeout rules, and reports the run as a table or as JSON |
+| Layer | Module | Responsibility |
+| --- | --- | --- |
+| Rules engine | `src/rules/` | Board/domain types, the track, JSON ruleset parsing, all rule decisions |
+| State formatting | `src/rules/formatter.ts` | ASCII board and dice rendering and the LLM prompt context |
+| Player agents | `src/agents/` | The `PlayerAgent` seam and its human/random/heuristic/LLM implementations |
+| Match controller | `src/ui/controller.ts` | Owns the interaction model: rolls, asks the active `PlayerAgent` for the re-roll and the move, and falls back to the heuristic agent when an agent fails. Decides no rule itself |
+| Presentation | `src/ui/` (plus `src/audio/`, `src/locale/`) | Board/dice rendering, turn banner, input and sound; answers the human half of the interaction |
+| Benchmark tool | `src/cli/` (`npm run bench`) | Plays bot-vs-bot and LLM-vs-bot matches through the engine, applies the turn-cap/timeout rules, and reports the run as a table or as JSON |
 
-The engine only depends on `System.*`, so the same rule code runs inside Unity, in EditMode tests and
-on a server that drives an LLM NPC.
+The engine imports nothing but its own modules — no DOM, no Node API, no third-party code — so the same
+rule code runs in the browser, in a web worker, in the headless benchmark and in the tests.
 
-### Engine API (`Sahkku.Rules.RulesEngine`)
+### Engine API (`src/rules/engine.ts`)
 
-```csharp
-GameState InitGame(EngineOptions options);               // options: startingPlayer, evenOdds
-PieceOwner ThrowForStartingPlayer(IRandomSource random); // "first to roll X starts" (see start.mode)
-void      RollAllDice(GameState state, IRandomSource random);
-void      RollAndBeginTurn(GameState state, IRandomSource random); // roll + order + open the move phase
-void      OrderDice(GameState state);                    // the ruleset's spending order
-void      RerollFirstDie(GameState state, IRandomSource random);
-bool      CanReroll(GameState state);
-bool      EvaluateAllowedPlaces(GameState state);        // fills Piece.allowedPlaces; true if any move exists
-List<Move> GetLegalMoves(GameState state);               // the cached view (call EvaluateAllowedPlaces first)
-List<Move> LegalMoves(GameState state);                  // the same list, computed from scratch
-bool      IsLegalMove(GameState state, Move move);       // pure legality check
-List<int> GetAllowedPlaces(GameState state, Piece piece); // board cells
-List<int> GetAllowedArcs(GameState state, Piece piece);   // the authoritative form (track arcs)
-List<RuleEvent> ApplyMove(GameState state, Move move);   // throws IllegalMoveException on an illegal move
-bool      TryApplyMove(GameState state, Move move, out List<RuleEvent> events);
-void      NextPlayerTurn(GameState state);
-List<string> ValidateState(GameState state);             // invariants; an empty list means sound
+```ts
+initGame(options: EngineOptions, random?: IRandomSource | null): GameState;
+throwForStartingPlayer(random: IRandomSource): PieceOwner; // "first to roll X starts" (see start.mode)
+rollAllDice(state: GameState, random: IRandomSource): void;
+rollDice(state: GameState, random: IRandomSource): void;
+rollAndBeginTurn(state: GameState, random: IRandomSource): void; // roll + order + open the move phase
+orderDice(state: GameState): void;                                // the ruleset's spending order
+rerollFirstDie(state: GameState, random: IRandomSource): void;
+applyRerollDecision(state: GameState, decision: RerollDecision, random?: IRandomSource | null): void;
+canReroll(state: GameState): boolean;
+evaluateAllowedPlaces(state: GameState): boolean;    // fills Piece.allowedPlaces; true if any move exists
+getLegalMoves(state: GameState): Move[];             // the cached view (call evaluateAllowedPlaces first)
+legalMoves(state: GameState): Move[];                // the same list, computed from scratch
+isLegalMove(state: GameState, move: Move): boolean; // pure legality check
+getAllowedPlaces(state: GameState, piece: Piece): number[]; // board cells
+getAllowedArcs(state: GameState, piece: Piece): number[];   // the authoritative form (track arcs)
+applyMove(state: GameState, move: Move): RuleEvent[];       // throws IllegalMoveException on an illegal move
+tryApplyMove(state: GameState, move: Move): { success: boolean; events: RuleEvent[] };
+nextPlayerTurn(state: GameState): void;
+validateState(state: GameState): string[];           // invariants; an empty list means sound
 
 // track helpers (for hosts, tooling and tests)
-int TrackLength; int PlaceOfArc(PieceOwner owner, int arc); int ArcOfPlace(PieceOwner owner, int place);
-int HomeRowOf(PieceOwner owner);
+get trackLength(): number; placeOfArc(owner, arc): number; arcOfPlace(owner, place): number;
+homeRowOf(owner): number;
 ```
 
 `Piece`/`Place`/`GameState`/`Move`/`RuleEvent` and the enums (`PieceType`, `PieceOwner`, `DieFace`,
-`TurnPhase`, `WinReason`) live in `Assets/Scripts/Rules/Domain.cs`; the track lives in
-`Assets/Scripts/Rules/Track.cs`.
+`TurnPhase`, `WinReason`) live in `src/rules/domain.ts`; the track lives in `src/rules/track.ts`.
 
-`ApplyMove` **refuses illegal moves** (`IllegalMoveException`) so that no caller — UI, replay file,
-network message or LLM — can drive the game into an illegal position. `TryApplyMove` is the
-non-throwing form, and `GameState.Clone()` lets a search (or a test) try a move without touching the
+`applyMove` **refuses illegal moves** (`IllegalMoveException`) so that no caller — UI, replay file,
+network message or LLM — can drive the game into an illegal position. `tryApplyMove` is the
+non-throwing form, and `GameState.clone()` lets a search (or a test) try a move without touching the
 live game.
 
-`ApplyMove` returns `RuleEvent`s (`PieceMoved`, `SoldierCaptured`, `KingRecruited`, `QueenCaptured`,
-`GameWon` in the order the original code played its sounds); `GameLogic.PlayRuleEvents` maps them to
-`AudioManager` calls. When the game ends the engine also sets `GameState.winner` and
-`GameState.winReason`, so the host never has to re-derive *why* it ended. The engine itself never
-touches audio, visuals or `UnityEngine`.
+`applyMove` returns `RuleEvent`s (`PieceMoved`, `SoldierCaptured`, `KingRecruited`, `QueenCaptured`,
+`GameWon`); the controller maps them to `AudioManager` cues. When the game ends the engine also sets
+`GameState.winner` and `GameState.winReason`, so the host never has to re-derive *why* it ended. The
+engine itself never touches audio, visuals or the DOM.
 
 ## The track (why pieces carry an `arc`)
 
@@ -83,9 +83,10 @@ mirror of it, because the two players sit at opposite ends of the same board.
 
 ## The JSON ruleset
 
-The ruleset is authored by hand at `Assets/Resources/SahkkuRules.json` and loaded by name through
-`RuleSetProvider`. It is parsed by the engine's own dependency-free reader (`Sahkku.Rules.JsonParser`),
-so no third-party serializer is required.
+The ruleset is authored by hand at `src/rules/SahkkuRules.json` and loaded through
+`loadShippedRuleset()` / `RuleSetJson.fromJson()`. It has no schema of its own: `RuleSetJson` maps the
+document onto `RuleSet` field by field, so a misspelled key is caught by `validate()` and by
+`NoSchemaFieldIsLeftUnread` rather than silently ignored.
 
 Top-level sections:
 
@@ -132,28 +133,31 @@ The remaining sections:
 | `variants.*.soldiersActive` | how many of the leading soldiers start loose; the next one starts activatable |
 | `win.opponentSoldiersExhausted` | you win when the opponent has no soldiers left |
 
-`RuleSet.Validate()` (called by `RuleSetJson.FromJson`) rejects malformed rulesets with a descriptive
+`RuleSet.validate()` (called by `RuleSetJson.fromJson`) rejects malformed rulesets with a descriptive
 `RuleSetException`: unknown face ids, a spending order that skips a face, a track whose legs do not join
 end-to-end with a bend, overlapping setup cells, a variant that leaves no soldier to activate, and a
 ruleset with no way to win.
 
 ## Tests
 
-`Assets/Tests/Rules/RulesTests.cs` (NUnit 3) covers board mapping, the track (including the second pass
-over the middle row and a full lap), standard/even-odds setup, movement per piece/die, capture, recruit,
-king activation, `landingEndsGame`, the ruleset-driven variants of those rules, move validation, dice
-ordering, re-roll conditions, turn transitions, JSON validation, state invariants and two seeded
-full-game simulations. `PlayerAgentTests.cs` covers the human/random/heuristic agents,
-`LlmAgentTests.cs` the LLM NPC against a scripted transport, and `BenchmarkTests.cs` the headless match
-runner, its statistics and its fallback counter — so no test touches the network.
+`npm test` (Vitest) runs the suites under `tests/`:
 
-The engine sources only need `System.*`, so the same tests also run headlessly, which makes the ruleset
-verifiable without Unity:
+* `tests/rules/rules.test.ts` covers board mapping, the track (including the second pass over the middle
+  row and a full lap), standard/even-odds setup, movement per piece/die, capture, recruit, king
+  activation, `landingEndsGame`, the ruleset-driven variants of those rules, move validation, dice
+  ordering, re-roll conditions, turn transitions, JSON validation, state invariants and two seeded
+  full-game simulations.
+* `tests/agents/` covers the human/random/heuristic agents and the LLM NPC against a scripted transport.
+* `tests/cli/` covers the headless match runner, its statistics and its fallback counter. The LLM
+  suites drive a scripted transport, so the whole suite runs offline.
+* `tests/ui/` covers the settings store, the interaction model and the game modes.
+
+The engine needs only its own modules, so the same suite also runs headlessly anywhere Node runs:
 
 ```bash
-# Unity:  Window ▸ General ▸ Test Runner ▸ EditMode
-# Headless (needs the .NET SDK):
-dotnet test Tools/RulesTests
+npm test          # the whole Vitest suite
+npm run typecheck # tsc --noEmit over src/ and tests/
+npm run test:e2e  # the Playwright browser suite (see README.md)
 ```
 
 ## Deliberate behaviour, pinned by tests
@@ -192,70 +196,66 @@ Every clause of the player-facing rules maps onto a ruleset field and a test:
 | "The first one to get X starts" | `start.mode` | `ThrowForStartingPlayer_FirstSahhkuStarts` |
 | "Like odds": three soldiers are taken loose | `variants.evenOdds.soldiersActive` | `InitGame_EvenOdds_MarksTheThreeForemostSoldiersLoose` |
 
-## Agents (`Sahkku.Rules.Bridge`)
+## Agents (`src/agents/`)
 
-`IPlayerAgent` is the seam. A side is played by a `HumanPlayerAgent` (which forwards both decisions to
-`IHumanInteraction`, implemented by the Unity presentation), a `RandomPlayerAgent` (the AI the game
+`PlayerAgent` is the seam. A side is played by a `HumanPlayerAgent` (which forwards both decisions to
+the injected interaction, implemented by the web client), a `RandomPlayerAgent` (the AI the game
 shipped with), a `HeuristicPlayerAgent` (deterministic scoring; also the controller's fallback) or an
 `LlmPlayerAgent` (an LLM NPC behind an OpenAI-compatible endpoint).
 
-### The LLM NPC (`LlmClient.cs`, `LlmPlayerAgent.cs`)
+### The LLM NPC (`src/agents/llm.ts`)
 
 `LlmPlayerAgent` asks the model to rank the options the engine already declared legal:
 
-1. The prompt is `GameStateFormatter.FormatPromptContext(state, legalMoves)` - the authoritative board,
+1. The prompt is `GameStateFormatter.formatPromptContext(state, legalMoves)` - the authoritative board,
    the dice in spending order and every legal move as a numbered list — plus the JSON contract
    (`{"move_index": N, "reasoning": "..."}`, or `{"reroll": true, "reasoning": "..."}` for the optional
-   sáhkku re-roll). `LlmChatRequest` builds the chat-completions body by hand, so the bridge keeps
-   compiling for IL2CPP/WebGL.
-2. `LlmResponseParser` reads the answer: the `choices[0].message.content` envelope, Markdown fences,
-   quoted numbers and JSON embedded in prose, and gives up (returns `false`) rather than throwing.
+   sáhkku re-roll). The chat-completions body is built as plain JSON.
+2. The parser reads the answer: the `choices[0].message.content` envelope, Markdown fences, quoted
+   numbers and JSON embedded in prose, and gives up (returns `null`) rather than throwing.
 3. The move is taken from `legalMoves[moveIndex]`, so an accepted proposal is legal by construction and no
    model output can mutate the state. A forced move (one legal option) skips the round trip entirely.
 
 Every failure — no endpoint, connection refused, HTTP non-200, timeout, an unusable answer, an index
 outside the list, a re-roll the engine does not offer — logs once and falls back to
 `HeuristicPlayerAgent`, so a missing model degrades the opponent instead of breaking the match. A
-cancelled match is the one case that propagates (`OperationCanceledException`): the transport applies its
-deadline through a *linked* token, so "the model was too slow" is distinguishable from "the scene left".
+cancelled match is the one case that propagates (`AbortSignal`): "the model was too slow" stays
+distinguishable from "the match ended".
 
-`GameSettings.GetLlmConfig()` supplies the endpoint, the model name and the deadline (`llmEndpointUrl`,
-`llmModelName`, `llmTimeoutSeconds`); `GameLogic` builds one `HttpClientLlmTransport` per match and
-releases it when the match loop ends. On the options screen, the grown "LLM opponent" row switches player
-two between that agent and the deterministic bot.
+`src/ui/settings.ts` supplies the endpoint, the model name and the timeout (`llmEndpoint`, `llmModel`,
+`llmTimeoutSeconds`, persisted in `localStorage["sahkku_settings"]`); `src/agents/config.ts` reads the
+same two values from a shared `llm-config.json` for the headless benchmark. The settings dialog's
+"LLM opponent" section only stores those connection details and the fallback notice — it does not pick
+an agent. Which agent plays a seat is chosen in the match-setup toolbar: the mode select decides which
+seats are human, and the player-two bot select (`#bot2-select`, wired in `src/main.ts`) restarts the
+match with the chosen bot kind — Heuristic, Random or LLM (`BotKinds` in `src/ui/controller.ts`).
 
-## Headless benchmark (`Tools/SahkkuBench`)
+## Headless benchmark (`npm run bench`)
 
-`Tools/SahkkuBench` is a plain .NET 8 console app that plays matches off-engine — no Unity, no scene — with
-the same rules and the same agents:
+`src/cli/` plays matches off-engine — no browser, no renderer — with the same rules and the same agents:
 
 ```bash
-# Headless (needs the .NET SDK); `--help` lists every flag.
-dotnet run --project Tools/SahkkuBench -- --games 100 --p1 heuristic --p2 random
-dotnet run --project Tools/SahkkuBench -- --games 10 --p1 llm --p2 heuristic --json
+# `--help` lists every flag.
+npm run bench -- --games 100 --p1 heuristic --p2 random
+npm run bench -- --games 10 --p1 llm --p2 heuristic --json
 ```
 
 `MatchRunner` owns one game and decides no rule itself: it rolls, asks the active agent
-(`DecideRerollAsync` while `CanReroll`, `DecideMoveAsync` while a die is up for spending), checks every
-proposal with `IsLegalMove` before handing it to `ApplyMove`, and runs `ValidateState` after every change.
+(`decideReroll` while `canReroll`, `decideMove` while a die is up for spending), checks every proposal
+with `isLegalMove` before handing it to `applyMove`, and runs `validateState` after every change.
 The failure rules the harness has to follow are the same ones the game follows:
 
 * An illegal proposal or a broken invariant is a **rule violation**: the game is aborted, the reason is
   recorded, and the run exits `1`. The runner never substitutes a move to get past one.
-* `--max-turns` turns a game that runs past the cap into a **draw** (`Winner`/`WinReason` `None`), which is
+* `--max-turns` turns a game that runs past the cap into a **draw** (`winner`/`winReason` `None`), which is
   a result, not a failure.
 * A per-turn deadline turns an agent that does not answer into a **failed game**, which also exits `1`.
 
-`BenchmarkStats` folds the games into win rates, half-move averages, captures, re-roll counts and LLM
+`BenchmarkSummary` folds the games into win rates, half-move averages, captures, re-roll counts and LLM
 fallbacks, printed as a table or as JSON (`--json`). The fallback number comes from `LlmFallbackCounter`,
 which reads the agent's own log lines: the agent logs its decisions (which carry the model's free-form
 reasoning) and its fallbacks, so the counter matches a fallback on the *shape* of the line — the sentence
 it starts with — rather than by looking for a phrase anywhere in it, which a model echoing the agent's
 wording inside its reasoning would otherwise inflate. Runs are reproducible: with `--seed` the dice come
-from `SeededRandomSource` — SplitMix64 written out, so a .NET upgrade cannot change a seed's games — and
+from `SeededRandomSource` — SplitMix64 written out, so a runtime upgrade cannot change a seed's games — and
 the random bots draw from the same generator.
-
-`Sahkku/Assets/Tests/Rules/BenchmarkTests.cs` covers the runner, the statistics and the fallback counter.
-The harness lives outside `Assets/`, so no Unity assembly can reference it: the fixture is compiled by
-`Tools/RulesTests/RulesTests.csproj` (which includes `MatchRunner.cs`, `BenchmarkStats.cs` and
-`LlmFallbackCounter.cs` directly) and is deliberately empty in the EditMode runner.
