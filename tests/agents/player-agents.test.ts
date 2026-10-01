@@ -1,5 +1,5 @@
 /**
- * Vitest port of `Sahkku/Assets/Tests/Rules/PlayerAgentTests.cs`, plus the small "no interaction"
+ * Vitest port of the retired C# `PlayerAgentTests` suite, plus the small "no interaction"
  * contract the task adds to the human agent.
  *
  * Every `[Test]` maps onto an `it` with the same name, so the suite can be diffed against the C#

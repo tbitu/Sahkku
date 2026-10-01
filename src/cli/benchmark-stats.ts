@@ -1,6 +1,6 @@
 /**
- * Aggregate benchmark statistics: a 1:1 port of `Tools/SahkkuBench/BenchmarkStats.cs` and
- * `Tools/SahkkuBench/LlmFallbackCounter.cs`.
+ * Aggregate benchmark statistics: the 1:1 port of the retired C# `BenchmarkStats` and
+ * `LlmFallbackCounter`.
  *
  * The summary is filled one game at a time (`add`), so a long run never has to keep its results — which
  * matters because a `MatchResult` pins the final board of its game. The fallback counter is the one

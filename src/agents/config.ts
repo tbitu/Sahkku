@@ -1,6 +1,5 @@
 /**
- * The shared LLM endpoint configuration: a port of `LlmConfigFile.cs` in
- * `Sahkku/Assets/Scripts/RulesBridge/`.
+ * The shared LLM endpoint configuration: a port of the retired C# `LlmConfigFile`.
  *
  * One small JSON file (`llm-config.json`) holds the OpenAI-compatible endpoint and the model name, read
  * by the headless benchmark and (later) the web client alike, so the settings dialog and the evaluation

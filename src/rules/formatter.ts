@@ -1,6 +1,5 @@
 /**
- * Pure presentation of a `GameState`: a 1:1 port of
- * `Sahkku/Assets/Scripts/Rules/GameStateFormatter.cs`.
+ * Pure presentation of a `GameState`: the 1:1 port of the retired C# `GameStateFormatter`.
  *
  * A formatter is a pure function of the state — same state in, same string out; it reads only from
  * `GameState.places`, `GameState.dice` and the pieces' stored arcs, with no engine calls, no

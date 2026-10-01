@@ -1,5 +1,5 @@
 /**
- * Vitest port of the headless half of `Sahkku/Assets/Tests/Rules/BenchmarkTests.cs`: the match runner's
+ * Vitest port of the headless half of the retired C# `BenchmarkTests` suite: the match runner's
  * turn loop, the failure rules it has to follow, the statistics it reports, and the CLI on top of them.
  *
  * Strength is measured against a baseline that is weak by construction. The shipped `RandomPlayerAgent`

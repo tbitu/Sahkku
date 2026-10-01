@@ -1,13 +1,13 @@
 /**
- * Core data model of the Sáhkku rules engine — a 1:1 port of `Sahkku/Assets/Scripts/Rules/Domain.cs`.
+ * Core data model of the Sáhkku rules engine — the 1:1 port of the retired C# domain model.
  *
  * Nothing in here depends on a host, a renderer or a random source, so the very same state objects
- * are produced by the browser client, by the headless CLI and by the tests. Enum values keep the
+ * are produced by the browser client, by the headless CLI and by the tests. Enum *values* keep the
  * C# ordering (they are part of the persisted/replayed state), and enum *names* are kept in
  * PascalCase so the port stays greppable against the C# original.
  */
 
-/** Kind of piece; values mirror the original GameLogic enum ordering. */
+/** Kind of piece; values mirror the original C# enum ordering. */
 export enum PieceType {
   Soldier = 0,
   King = 1,

@@ -1,6 +1,5 @@
 /**
- * The LLM NPC: a 1:1 port of `LlmClient.cs` and `LlmPlayerAgent.cs` in
- * `Sahkku/Assets/Scripts/RulesBridge/`.
+ * The LLM NPC: the 1:1 port of the retired C# `LlmClient` and `LlmPlayerAgent`.
  *
  * The agent asks an OpenAI-compatible endpoint to pick one of the moves the engine has already declared
  * legal, and accepts the answer only after checking it against that list. The rules engine stays the sole

@@ -1,6 +1,5 @@
 /**
- * The human player: a 1:1 port of `HumanPlayerAgent` in
- * `Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs`.
+ * The human player: the 1:1 port of the retired C# `HumanPlayerAgent`.
  *
  * The agent owns no policy at all — it forwards both decisions to the injected interaction, which the
  * 2D web client implements on top of clicks and buttons. Without an interaction (a headless seat, or

@@ -1,8 +1,4 @@
 # Repository-level ignores.
-#
-# The Unity project keeps its own rules in Sahkku/.gitignore (the stock Unity template),
-# which covers Library/, Temp/, Logs/, UserSettings/ and the generated *.csproj / *.sln
-# files inside Sahkku/. Only things that live outside that project belong here.
 
 # Agent / tool session state.
 .reasonix
@@ -10,12 +6,7 @@
 reasonix.toml
 .pairflow/
 
-# Build output of the .NET tooling, i.e. the headless rules tests in Tools/RulesTests
-# (`dotnet test Tools/RulesTests`).
-Tools/**/bin/
-Tools/**/obj/
-
-# Node tooling for the TypeScript rules core: dependencies and test output.
+# Node tooling for the TypeScript rules core and the 2D web client: dependencies and test output.
 node_modules/
 coverage/
 

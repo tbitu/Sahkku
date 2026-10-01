@@ -1,6 +1,5 @@
 /**
- * The random CPU: a 1:1 port of `RandomPlayerAgent` in
- * `Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs`.
+ * The random CPU: the 1:1 port of the retired C# `RandomPlayerAgent`.
  *
  * It is the bot the Unity game shipped with, and its draw is deliberately preserved, quirk included:
  * it picks a random movable piece, then draws an index in `[0, 4)` and clamps it to that piece's

@@ -1,13 +1,14 @@
 /**
- * Vitest port of the pure-rules suite in `Sahkku/Assets/Tests/Rules/RulesTests.cs`.
+ * Vitest port of the retired C# `RulesTests` suite.
  *
  * Every `[TestFixture]` maps onto a `describe` block and every `[Test]` method onto an `it` with the
  * same name, so the suite can be diffed against the C# original one assertion at a time. The
  * `describe` blocks below the ported fixtures cover the rest of this task's contract: the shipped
- * ruleset's fidelity to the canonical JSON, the `.NET`-compatible seeded random source and the
- * pinned outcomes of the two seeded full-game simulations.
+ * ruleset's fidelity to the document the port was verified against, the `.NET`-compatible seeded
+ * random source and the pinned outcomes of the two seeded full-game simulations.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,7 @@ import { RulesEngine } from "../../src/rules/engine";
 import { GameStateFormatter } from "../../src/rules/formatter";
 
 // ----------------------------------------------------------------------------------------------
-// Test doubles (ported from the helpers in RulesTests.cs)
+// Test doubles (ported from the helpers in the C# `RulesTests` suite)
 // ----------------------------------------------------------------------------------------------
 
 /** A bare board with no pieces, for exercising movement/capture rules in isolation. */
@@ -184,10 +185,10 @@ const Events = {
 };
 
 // ----------------------------------------------------------------------------------------------
-// The shipped ruleset (ported from TestRuleset.cs)
+// The shipped ruleset (ported from the C# `TestRuleset` fixture)
 // ----------------------------------------------------------------------------------------------
 
-const RULESET_RELATIVE_PATH = join("Sahkku", "Assets", "Resources", "SahkkuRules.json");
+const RULESET_RELATIVE_PATH = join("src", "rules", "SahkkuRules.json");
 const RULESET_ENVIRONMENT_VARIABLE = "SAHKKU_RULESET";
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -1517,12 +1518,23 @@ function jsonKeys(json: string): string[] {
   return keys;
 }
 
-describe("ShippedRulesetFidelityTests", () => {
-  it("ShippedRulesetCopy_IsAVerbatimCopyOfTheCanonicalUnityRuleset", () => {
-    const canonical = readFileSync(TestRuleset.path(), "utf8");
-    const copy = readFileSync(resolve(moduleDirectory, "../../src/rules/SahkkuRules.json"), "utf8");
+/**
+ * The sha256 of the ruleset document every rule below was verified against.
+ *
+ * The Unity copy that used to play this role was retired, so the shipped document is pinned here
+ * instead: a change to the ruleset must now be a deliberate edit that updates this hash — and re-runs
+ * the whole suite against the document it pins.
+ */
+const SHIPPED_RULESET_SHA256 = "251f7adfef695696a96dde83f02c46c5bb762fbcfe246ef7e77c9cbed9250304";
 
-    expect(copy).toBe(canonical);
+describe("ShippedRulesetFidelityTests", () => {
+  it("ShippedRuleset_IsThePinnedDocumentThePortWasVerifiedAgainst", () => {
+    const shipped = readFileSync(
+      resolve(moduleDirectory, "../../src/rules/SahkkuRules.json"),
+      "utf8",
+    );
+
+    expect(createHash("sha256").update(shipped).digest("hex")).toBe(SHIPPED_RULESET_SHA256);
   });
 
   it("ShippedRuleset_ValidatesWithNoProblemsAndNoUnknownKeys", () => {

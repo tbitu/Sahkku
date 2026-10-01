@@ -1,5 +1,5 @@
 /**
- * The rules engine: a 1:1 port of `Sahkku/Assets/Scripts/Rules/RulesEngine.cs`.
+ * The rules engine: the 1:1 port of the retired C# `RulesEngine`.
  *
  * Behaviour is defined by a `RuleSet` loaded from JSON; this type contains only the rule primitives
  * those definitions select. It has no host dependency and no hidden state, so it runs unchanged in

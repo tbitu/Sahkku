@@ -1,6 +1,5 @@
 /**
- * The deterministic bot: a 1:1 port of `HeuristicPlayerAgent` in
- * `Sahkku/Assets/Scripts/RulesBridge/PlayerAgents.cs`.
+ * The deterministic bot: the 1:1 port of the retired C# `HeuristicPlayerAgent`.
  *
  * It is the controller's fallback whenever another agent fails to answer, so it has to be total,
  * synchronous and reproducible: it scores every legal move with the weights below and takes the
@@ -10,9 +9,9 @@
  * The weights are the reference implementation's own. They are larger and more finely graded than the
  * "+100 soldier / +1000 queen / +500 queen-safety" summary in the task's L1 contract, and unlike that
  * summary they include an activation bonus; the reference's values are kept because this task is a
- * port and the ported tests (`PlayerAgentTests.cs`, `BenchmarkTests.cs`) pin the resulting ordering —
- * in particular "prefer activating a waiting soldier over a simple advance", which a scoring table
- * without `ActivatingPieceScore` cannot express.
+ * port and the ported tests (`tests/agents/player-agents.test.ts`, `tests/cli/bench.test.ts`) pin the
+ * resulting ordering — in particular "prefer activating a waiting soldier over a simple advance",
+ * which a scoring table without `ActivatingPieceScore` cannot express.
  */
 
 import {

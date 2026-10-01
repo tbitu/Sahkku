@@ -6,9 +6,9 @@ required = ["build"]
 meta_review_approve_required = ["test"]
 
 [validation.commands]
-build = "dotnet build Tools/RulesTests/RulesTests.csproj"
-test = "dotnet test Tools/RulesTests/RulesTests.csproj"
-bootstrap = "dotnet restore Tools/RulesTests/RulesTests.csproj"
+build = "npm run build"
+test = "npm test"
+bootstrap = "npm install"
 
 [defaults.agents]
 reviewer = "reasonix"
