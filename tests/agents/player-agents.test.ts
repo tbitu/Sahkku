@@ -2,12 +2,15 @@
  * Vitest port of the retired C# `PlayerAgentTests` suite, plus the small "no interaction"
  * contract the task adds to the human agent.
  *
- * Every `[Test]` maps onto an `it` with the same name, so the suite can be diffed against the C#
- * original one assertion at a time. The agents are engine-free (or engine-*aware*, never engine-owned),
- * which is why the same scenarios run headlessly here.
+ * Most `[Test]` cases map onto an `it` of the same name, so the suite can still be diffed against the
+ * C# original one assertion at a time; the random agent's re-roll test is the deliberate exception,
+ * replaced by `Random_KeepsTheSahhkuOrThrowsItAgainDependingOnItsDraw` and its two source-less
+ * companions once the unconditional re-throw it pinned turned out to be the bug. The agents are
+ * engine-free (or engine-*aware*, never engine-owned), which is why the same scenarios run headlessly
+ * here.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   DieFace,
@@ -205,15 +208,83 @@ describe("PlayerAgentTests", () => {
     expect(random.requests[1][1], "the move index is still drawn from [0, 4) and clamped").toBe(4);
   });
 
-  it("Random_AlwaysThrowsTheSahhkuAgain", async () => {
+  it("Random_KeepsTheSahhkuOrThrowsItAgainDependingOnItsDraw", async () => {
     const engine = testEngine();
     const board = new Board(engine);
     board.add(5, PieceType.Soldier, PieceOwner.P1, true);
     board.setDice(DieFace.Sahhku, DieFace.Zero, DieFace.Zero);
     board.phase(TurnPhase.P1move);
 
-    const agent = new RandomPlayerAgent(PieceOwner.P1, "Random", new ScriptedBotRandom(0));
-    expect(await agent.decideReroll(board.state)).toBe(RerollDecision.RerollActiveDie);
+    expect(engine.canReroll(board.state), "a sáhkku in the move phase offers a re-roll").toBe(true);
+
+    // A zero draw keeps the dice, which is the only way the CPU can ever spend a sáhkku on activating a
+    // queued piece; a one draws the re-throw. Both halves have to be reachable, and each has to be one
+    // coin flip taken from the injected source over the contracted `[0, 2)` range: these two scripts
+    // would answer identically for a wider draw (a one-in-four keep, say) or for a `Math.random` flip,
+    // so the requested range is pinned here rather than assumed.
+    const keepingDraw = new ScriptedBotRandom(0);
+    const keeping = new RandomPlayerAgent(PieceOwner.P1, "Random", keepingDraw);
+    expect(await keeping.decideReroll(board.state)).toBe(RerollDecision.KeepDiceAndProceed);
+    expect(keepingDraw.requests, "one coin flip, drawn from the bot's own [0, 2) range").toEqual([
+      [0, 2],
+    ]);
+
+    const rethrowingDraw = new ScriptedBotRandom(1);
+    const rethrowing = new RandomPlayerAgent(PieceOwner.P1, "Random", rethrowingDraw);
+    expect(await rethrowing.decideReroll(board.state)).toBe(RerollDecision.RerollActiveDie);
+    expect(rethrowingDraw.requests, "one coin flip, drawn from the bot's own [0, 2) range").toEqual([
+      [0, 2],
+    ]);
+  });
+
+  it("Random_WithoutASourceDrawsTheRerollFromMathRandom", async () => {
+    const engine = testEngine();
+    const board = new Board(engine);
+    board.add(5, PieceType.Soldier, PieceOwner.P1, true);
+    board.setDice(DieFace.Sahhku, DieFace.Zero, DieFace.Zero);
+    board.phase(TurnPhase.P1move);
+
+    // The missing-data rule for this decision: with no bot stream the CPU still decides by chance
+    // instead of freezing on one answer, and it is `Math.random` that is consulted. The stub therefore
+    // sits on the half-way point the rule names rather than merely bracketing it — the largest double
+    // below it still keeps the dice, the half-way draw itself already re-throws — because a stubbed
+    // 0.25 against 0.75 passes unchanged for a shifted threshold (`< 0.6`, `<= 0.5`) and so would pin
+    // the odds only loosely.
+    const largestDrawBelowTheHalfwayPoint = 0.5 - Number.EPSILON / 4; // 0.49999999999999994
+    const agent = new RandomPlayerAgent(PieceOwner.P1);
+    const random = vi.spyOn(Math, "random");
+
+    try {
+      random.mockReturnValue(largestDrawBelowTheHalfwayPoint);
+      expect(await agent.decideReroll(board.state)).toBe(RerollDecision.KeepDiceAndProceed);
+
+      random.mockReturnValue(0.5);
+      expect(await agent.decideReroll(board.state)).toBe(RerollDecision.RerollActiveDie);
+      expect(random).toHaveBeenCalledTimes(2);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("Random_WithoutASourceKeepsTheFirstLegalMove", async () => {
+    const engine = testEngine();
+    const board = boardWithChoices(engine);
+    const legalMoves = engine.legalMoves(board.state);
+    const agent = new RandomPlayerAgent(PieceOwner.P1);
+
+    // The other half of the missing-data story, and the reason `decideReroll` documents its fallback as
+    // its own: a source-less `decideMove` answers without drawing at all, so nothing here may consult
+    // `Math.random`.
+    const random = vi.spyOn(Math, "random");
+
+    try {
+      expect(legalMoves.length, "the fixture has to offer a choice").toBeGreaterThan(1);
+      expect(await agent.decideMove(board.state, legalMoves)).toBe(legalMoves[0]);
+      expect(await agent.decideMove(board.state, [])).toBeNull();
+      expect(random).not.toHaveBeenCalled();
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it("Human_DelegatesBothDecisionsToTheInteraction", async () => {
