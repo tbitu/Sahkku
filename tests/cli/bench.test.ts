@@ -2,10 +2,12 @@
  * Vitest port of the headless half of the retired C# `BenchmarkTests` suite: the match runner's
  * turn loop, the failure rules it has to follow, the statistics it reports, and the CLI on top of them.
  *
- * Strength is measured against a baseline that is weak by construction. The shipped `RandomPlayerAgent`
- * re-throws every sáhkku it sees, and this ruleset rewards that: a sáhkku is worth one step where a two
- * or a three is worth more, and a re-throw is free while no die of the throw has been spent. That is why
- * the strength fixture below seats a *keep-the-dice* random bot rather than the shipped one.
+ * Strength is measured against a baseline that is weak by construction. A sáhkku is worth one step
+ * where a two or a three is worth more, and a re-throw is free while no die of the throw has been
+ * spent, so a bot that never re-rolls has to play its sáhkku as it fell — a one-step move, or an
+ * activation — rather than fishing for a bigger face. That is why the strength fixture below seats a
+ * *keep-the-dice* random bot rather than the shipped one, whose re-roll flips would add a second source
+ * of randomness to the comparison.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -86,9 +88,46 @@ describe("BenchmarkTests", () => {
     expect(engine.validateState(result.finalState as GameState)).toEqual([]);
   });
 
+  it("MatchRunner_PlaysHeuristicVersusTheShippedRandomBotToADecision", async () => {
+    const games = 10;
+    const engine = testEngine();
+    const summary = new BenchmarkSummary();
+    let worstGame = 0;
+
+    for (let game = 0; game < games; game++) {
+      const heuristic = new HeuristicPlayerAgent(PieceOwner.P1, "Heuristic", engine);
+      const random = new RandomPlayerAgent(PieceOwner.P2, "Random", new SeededRandomSource(20260919 + game));
+      const result = await runner(engine, heuristic, random).runMatch(game, config(1000 + game, 10000));
+
+      expect(result.ruleViolationOccurred, `game ${game}: ${result.errorMessage}`).toBe(false);
+      expect(result.errorMessage, `game ${game}: ${result.errorMessage}`).toBeNull();
+      expect(engine.validateState(result.finalState as GameState), `game ${game} ended on a sound board`).toEqual([]);
+
+      // The regression this pins: the shipped CPU used to re-throw every sáhkku, so it could never
+      // spend one on activating a queued piece — once its loose soldiers were gone it had nothing legal
+      // to play. With these seeds that left 9 of the 10 games grinding all 10,000 half-moves out into a
+      // draw; the tenth ended in 16 half-moves, on a queen captured by the re-thrower itself.
+      expect(result.hitTurnLimit, `game ${game} ran into the turn limit`).toBe(false);
+      expect(result.winner, `game ${game} produced no winner`).not.toBe(PieceOwner.None);
+      expect(result.winReason).not.toBe(WinReason.None);
+      expect(result.finalState?.gameOver).toBe(true);
+
+      summary.add(result);
+      worstGame = Math.max(worstGame, result.totalHalfMoves);
+    }
+
+    expect(summary.draws, "a random opponent that can activate pieces still gets beaten").toBe(0);
+    expect(summary.failures).toBe(0);
+    expect(
+      summary.averageHalfMoves,
+      `games have to resolve far inside the cap, but averaged ${summary.averageHalfMoves} half-moves and the worst took ${worstGame}`,
+    ).toBeLessThan(300);
+  });
+
   it("MatchRunner_EnforcesTurnLimit", async () => {
     const engine = testEngine();
-    // Two random bots: neither can reach a queen in twenty half-moves, so the cap is what ends this.
+    // Two random bots capped at twenty half-moves: the point is the cap, so this pair is picked for the
+    // game it plays — with these streams both sides are still mobilising when the cap arrives.
     const p1 = new RandomPlayerAgent(PieceOwner.P1, "Random", new SeededRandomSource(11));
     const p2 = new RandomPlayerAgent(PieceOwner.P2, "Random", new SeededRandomSource(12));
 
@@ -557,8 +596,8 @@ function llmAgent(engine: RulesEngine, transport: LlmTransport | null, log: (lin
 
 /**
  * The strength baseline: uniform random legal moves, keeping whatever it rolled. Deterministic from its
- * seed, and weak by construction — unlike `RandomPlayerAgent`, which is strong in this ruleset because it
- * re-throws every sáhkku.
+ * seed, and weak by construction — it never re-rolls, so a sáhkku is only ever played as it fell. Kept
+ * apart from `RandomPlayerAgent` so the comparison does not ride on the shipped CPU's own coin flips.
  */
 class KeepTheDiceRandomAgent implements PlayerAgent {
   readonly owner: PieceOwner;

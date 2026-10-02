@@ -1,10 +1,13 @@
 /**
- * The random CPU: the 1:1 port of the retired C# `RandomPlayerAgent`.
+ * The random CPU: the port of the retired C# `RandomPlayerAgent`, faithful decision for decision
+ * except its re-roll, which is now probabilistic instead of always a re-throw (see `decideReroll`).
  *
  * It is the bot the Unity game shipped with, and its draw is deliberately preserved, quirk included:
  * it picks a random movable piece, then draws an index in `[0, 4)` and clamps it to that piece's
- * options — the pre-engine CPU's draw, which is *not* uniform over the real range. It also always
- * throws a sáhkku die again, which is why a turn could only continue via the re-roll button.
+ * options — the pre-engine CPU's draw, which is *not* uniform over the real range. Its re-roll is a
+ * fair coin flip drawn from that same stream: the shipped CPU re-threw every sáhkku unconditionally,
+ * which kept it from ever spending a sáhkku on activating a queued piece, so most matches against it
+ * ground out the whole turn limit into a draw (the mechanism is in the task's problem summary).
  */
 
 import { Move, RerollDecision, type GameState, type PieceOwner } from "../rules/domain";
@@ -22,8 +25,23 @@ export class RandomPlayerAgent implements PlayerAgent {
     this.random = random;
   }
 
+  /**
+   * Keeps the thrown dice or throws the active sáhkku again, with even odds.
+   *
+   * A random player has to be random about this too, and it is load-bearing: spending a sáhkku is the
+   * only way to activate a queued piece, so a CPU that always re-threw could never bring a new soldier
+   * (or its queen) onto the track — once its three loose soldiers were captured it had nothing legal to
+   * play, so most games against it ground out the whole turn limit into a draw; the ones that did end
+   * were won by the re-thrower itself, nearly always by an early queen capture. The draw comes from the
+   * bot's own stream so a seeded run still replays exactly; a source-less agent has no stream to draw
+   * from and flips `Math.random` instead. That fallback is this method's own: `decideMove` answers a
+   * missing source without drawing at all, by taking the first legal move.
+   */
   decideReroll(_state: GameState, _signal?: AbortSignal): Promise<RerollDecision> {
-    return Promise.resolve(RerollDecision.RerollActiveDie);
+    const keepsTheDice = this.random == null ? Math.random() < 0.5 : this.random.nextInt(0, 2) === 0;
+    return Promise.resolve(
+      keepsTheDice ? RerollDecision.KeepDiceAndProceed : RerollDecision.RerollActiveDie,
+    );
   }
 
   decideMove(_state: GameState, legalMoves: readonly Move[]): Promise<Move | null> {

@@ -5,7 +5,7 @@ task_family_id: fix-random-agent-stalemate
 sequence_key: "1"
 task_id: 1-fix-random-agent-stalemate
 title: "Fix Random Agent Perpetual Reroll Stalemate and Verify Game Resolution Rules"
-status: approved
+status: archived
 phase: implementation
 target_files:
   - src/agents/random.ts
@@ -22,7 +22,7 @@ doc_bubble_id: null
 impl_bubble_id: 1-fix-random-agent-stalemate
 supersedes: []
 superseded_by: null
-archive_group: null
+archive_group: 2026-10-01-fix-random-agent-stalemate
 ---
 
 # Task 1: Fix Random Agent Perpetual Reroll Stalemate and Verify Game Resolution Rules
